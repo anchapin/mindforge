@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 import httpx
-import ollama
 
 from backend.exceptions import BudgetExceeded
 
@@ -243,6 +242,8 @@ class LLMRouter:
         self, cfg: LLMConfig, system: str, prompt: str
     ) -> str:
         """Call local Ollama server."""
+        import ollama
+
         try:
             response = ollama.generate(
                 model=cfg.model,
