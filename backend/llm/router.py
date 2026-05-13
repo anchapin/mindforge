@@ -244,15 +244,20 @@ class LLMRouter:
     ) -> str:
         """Call local Ollama server."""
         try:
-            response = ollama.generate(
-                model=cfg.model,
-                prompt=prompt,
-                system=system if system else None,
-                options={
-                    "num_predict": cfg.max_tokens,
-                    "temperature": cfg.temperature,
-                },
-            )
+            opts = {"num_predict": cfg.max_tokens, "temperature": cfg.temperature}
+            if system:
+                response = ollama.generate(
+                    model=cfg.model,
+                    prompt=prompt,
+                    system=system,
+                    options=opts,
+                )
+            else:
+                response = ollama.generate(
+                    model=cfg.model,
+                    prompt=prompt,
+                    options=opts,
+                )
             return response["response"]
         except Exception as e:
             raise RuntimeError(f"Ollama call failed: {e}") from e

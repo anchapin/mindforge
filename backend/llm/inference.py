@@ -301,15 +301,20 @@ async def _ollama_complete(
     import ollama
 
     try:
-        response = ollama.generate(
-            model=model,
-            prompt=prompt,
-            system=system if system else None,
-            options={
-                "num_predict": max_tokens,
-                "temperature": temperature,
-            },
-        )
+        opts = {"num_predict": max_tokens, "temperature": temperature}
+        if system:
+            response = ollama.generate(
+                model=model,
+                prompt=prompt,
+                system=system,
+                options=opts,
+            )
+        else:
+            response = ollama.generate(
+                model=model,
+                prompt=prompt,
+                options=opts,
+            )
         return response["response"]
     except ollama.ResponseError as e:
         raise RuntimeError(f"Ollama error: {e}") from e
@@ -327,18 +332,27 @@ async def _ollama_stream(
     """Streaming response from local Ollama server."""
     import ollama
 
-    try:
-        response = await ollama.async_generate(
+    def _generate():
+        opts = {"num_predict": max_tokens, "temperature": temperature}
+        if system:
+            return ollama.generate(
+                model=model,
+                prompt=prompt,
+                system=system,
+                options=opts,
+                stream=True,
+            )
+        return ollama.generate(
             model=model,
             prompt=prompt,
-            system=system if system else None,
-            options={
-                "num_predict": max_tokens,
-                "temperature": temperature,
-            },
+            options=opts,
             stream=True,
         )
-        async for part in response:
+
+    try:
+        response = await asyncio.to_thread(_generate)
+        # ollama.generate with stream=True returns a sync iterator of GenerateResponse
+        for part in response:  # type: ignore[union-attr]
             if "response" in part:
                 yield part["response"]
     except Exception as e:

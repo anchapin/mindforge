@@ -237,11 +237,11 @@ class GliguardResult:
 
 
 # Lazy-loaded singleton GLiGuard model instance.
-_gliguard_model: GLiNER2 | None = None  # type: ignore[name-defined] — TYPE_CHECKING import
+_gliguard_model: GLiNER2 | None = None
 _gliguard_load_error: str | None = None
 
 
-def _get_gliguard_model() -> GLiNER2 | None:  # type: ignore[name-defined]
+def _get_gliguard_model() -> GLiNER2 | None:
     """Lazy-load GLiGuard model. Returns None if not available or disabled."""
     global _gliguard_model, _gliguard_load_error
 
