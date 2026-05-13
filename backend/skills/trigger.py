@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 async def trigger_skill(
     task_description: str,
-    llm_router: "LLMRouter | None" = None,
+    llm_router: LLMRouter | None = None,
 ) -> Skill | None:
     """Find the best-matching skill for a task description.
 
@@ -64,7 +64,7 @@ async def trigger_skill(
 
 async def _classify_intent(
     task_description: str,
-    llm_router: "LLMRouter",
+    llm_router: LLMRouter,
 ) -> str:
     """Classify a task into an intent string using a lightweight LLM call.
 

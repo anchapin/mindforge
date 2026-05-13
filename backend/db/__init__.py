@@ -1,9 +1,10 @@
 """Database health checks. From SPEC.md Section 5e.4."""
 
 from __future__ import annotations
+
+import logging
 import os
 import sqlite3
-import logging
 
 logger = logging.getLogger(__name__)
 

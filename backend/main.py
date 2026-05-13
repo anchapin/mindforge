@@ -1,14 +1,13 @@
 """MindForge FastAPI entry point."""
 
 import os
-import structlog
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+import structlog
+from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import WebSocket
 
-from backend.api.routes import tasks, memories, skills, integrations
+from backend.api.routes import integrations, memories, skills, tasks
 from backend.api.websocket import ws_manager
 from backend.db.migrate import run_migrations
 from backend.llm.router import LLM_ROUTER
@@ -95,7 +94,7 @@ async def health():
 
 @app.get("/ready")
 async def ready():
-    from backend.db import check_pglite, check_chroma
+    from backend.db import check_chroma, check_pglite
     pglite_ok = await check_pglite()
     chroma_ok = await check_chroma()
     return {

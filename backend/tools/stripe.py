@@ -1,9 +1,12 @@
 """Stripe API tool -- read-only for Phase 1."""
 
 from __future__ import annotations
-import httpx
-import time
+
 import logging
+import time
+
+import httpx
+
 from .base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -15,7 +18,6 @@ class StripeTool(BaseTool):
     required_integrations = ["stripe"]
 
     async def execute(self, action: str, **kwargs) -> ToolResult:
-        import time
         start = time.monotonic()
 
         api_key = kwargs.get("api_key", "")

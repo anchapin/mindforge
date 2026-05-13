@@ -6,10 +6,8 @@ From SPEC.md Section 3b.5.
 from __future__ import annotations
 
 import logging
-import os
 from datetime import datetime
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -18,7 +16,6 @@ from backend.skills.models import (
     Skill,
     SkillMetadata,
     SkillNode,
-    SkillTrigger,
     TriggerType,
 )
 

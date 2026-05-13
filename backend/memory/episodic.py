@@ -7,7 +7,6 @@ Stores completed task records enabling "what did we do last week?" queries.
 
 from __future__ import annotations
 
-import json
 import logging
 import sqlite3
 from dataclasses import dataclass, field
@@ -34,7 +33,7 @@ class EpisodicMemory:
     created_at: datetime = field(default_factory=datetime.utcnow)
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "EpisodicMemory":
+    def from_row(cls, row: sqlite3.Row) -> EpisodicMemory:
         data = dict(row)
         if isinstance(data.get("created_at"), str):
             data["created_at"] = datetime.fromisoformat(data["created_at"])

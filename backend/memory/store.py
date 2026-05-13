@@ -17,12 +17,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 from dataclasses import dataclass, field
 from typing import Any
 
+from .episodic import EpisodicMemory, EpisodicMemoryStore
 from .semantic import SemanticMemory
-from .episodic import EpisodicMemoryStore, EpisodicMemory
 from .style import WritingProfileStore
 
 logger = logging.getLogger(__name__)
@@ -250,7 +249,7 @@ class SharedMemoryStore:
         **kwargs,
     ) -> list[str]:
         """Direct (non-queued) semantic write — used when you need IDs immediately."""
-        from .sanitizer import sanitize_for_memory, ContentSource
+        from .sanitizer import ContentSource, sanitize_for_memory
 
         sanitized, meta = sanitize_for_memory(
             text=text,

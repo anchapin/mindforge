@@ -7,20 +7,19 @@ Uses LangGraph StateGraph with SQLite checkpointer for task persistence across r
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
-from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.sqlite import SqliteSaver
+from langgraph.graph import END, StateGraph
 from sqlalchemy import create_engine
 
+from ..llm.router import InferenceTier, llm_complete
 from ..memory.store import SharedMemoryStore
-from ..llm.router import llm_complete, InferenceTier
-from .routing import AGENT_ROLES, route_to_agent, classify_task_type
+from .routing import AGENT_ROLES, classify_task_type, route_to_agent
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +40,7 @@ class AgentState:
     result: dict[str, Any] | None = None
     error: str | None = None
 
-    def model_copy(self, update: dict[str, Any]) -> "AgentState":
+    def model_copy(self, update: dict[str, Any]) -> AgentState:
         """Shallow copy with field updates (compatible with Pydantic-like usage)."""
         import copy
         new_state = copy.copy(self)
