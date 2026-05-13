@@ -392,3 +392,53 @@ class LLMRouter:
 
 # Global singleton
 LLM_ROUTER = LLMRouter()
+
+
+# ── Public API wrapper ────────────────────────────────────────────────────────
+# Convenience functions that delegate to the router singleton.
+
+
+async def llm_complete(
+    prompt: str,
+    tier: InferenceTier | None = None,
+    system: str = "",
+    agent_role: str | None = None,
+) -> str:
+    """Complete a prompt using the appropriate LLM tier.
+
+    Args:
+        prompt: The user prompt.
+        tier: Explicit inference tier override.
+        system: Optional system prompt.
+        agent_role: Agent role key for tier inference.
+
+    Returns:
+        The complete response text.
+
+    Raises:
+        RuntimeError: When all models in the fallback chain are unavailable.
+    """
+    return await LLM_ROUTER.complete(
+        prompt=prompt,
+        tier=tier,
+        system=system,
+        agent_role=agent_role,
+        stream=False,
+    )  # type: ignore[return-value]
+
+
+async def llm_complete_stream(
+    prompt: str,
+    tier: InferenceTier | None = None,
+    system: str = "",
+    agent_role: str | None = None,
+) -> "AsyncGenerator[str, None]":
+    """Stream a prompt completion token by token."""
+    generator = await LLM_ROUTER.complete(
+        prompt=prompt,
+        tier=tier,
+        system=system,
+        agent_role=agent_role,
+        stream=True,
+    )
+    return generator  # type: ignore[return-value]
