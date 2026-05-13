@@ -27,7 +27,7 @@ services:
       chroma:
         condition: service_healthy
       ollama:
-        condition: service_healthy
+        condition: service_started
     networks:
       - mindforge
     healthcheck:
