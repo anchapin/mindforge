@@ -15,12 +15,12 @@ import pytest
 def event_loop():
     """One event loop per test session for async tests."""
     loop = asyncio.new_event_loop()
-    yield loop
+    yield loop  # type: ignore[misc]
     loop.close()
 
 
 @pytest.fixture
-def pglite_test_db(tmp_path: Path) -> MagicMock:
+def pglite_test_db(tmp_path: Path) -> MagicMock:  # type: ignore[misc]
     """Isolated PGLite DB for each test.
 
     Creates a temporary SQLite database and initializes the schema.
