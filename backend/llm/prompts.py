@@ -6,16 +6,23 @@ From SPEC.md §3b.8:
     matches injection patterns detected by sanitize_for_memory().
   Layer 3 — Approval gate amplification for memory-sourced high-stakes tasks.
     When memory is the primary context for a high-stakes action
-    (email send, GitHub push, Stripe refund), force a draft-approval cycle.
+    (email send, GitHub PR, Stripe refund), force a draft-approval cycle.
 
-Only Layer 2 lives here. Layer 3 is in agents/supervisor.py.
+Layer 2b (GLiGuard integration):
+  Optional learned-safety classifier (fastino/gliguard-LLMGuardrails-300M) that
+  runs after the regex filter to catch novel injection patterns that patterns miss.
+  Enabled when GLIGUARD_ENABLED=true and gliner2 is installed.
+
+Only Layer 2 and Layer 3 logic lives here. Layer 1 is in memory/sanitizer.py.
 """
 
 from __future__ import annotations
 
+import os
 import re
 import structlog
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 from ..memory.sanitizer import (
     INJECTION_PATTERNS,
@@ -25,7 +32,7 @@ from ..memory.sanitizer import (
 logger = structlog.get_logger(__name__)
 
 # ---------------------------------------------------------------------------------------
-# Layer 2 — Instruction filtering at prompt build
+# Layer 2a — Instruction filtering at prompt build (regex-based)
 # ---------------------------------------------------------------------------------------
 
 # Patterns that indicate a memory record may be trying to override system instructions.
@@ -171,6 +178,216 @@ def filter_memories_for_prompt(
         filtered.append(filtered_record)
 
     return filtered
+
+
+# ---------------------------------------------------------------------------------------
+# Layer 2b — GLiGuard learned safety classifier
+# ---------------------------------------------------------------------------------------
+
+# Whether GLiGuard is enabled (set by environment or defaults to auto-detect).
+GLIGUARD_ENABLED = os.getenv("GLIGUARD_ENABLED", "").lower() in ("1", "true", "yes")
+GLIGUARD_THRESHOLD = float(os.getenv("GLIGUARD_THRESHOLD", "0.5"))
+
+# GLiGuard task schemas — label sets passed to classify_text().
+# These are used at inference time (schema-conditioned, no fine-tuning needed).
+SAFETY_LABELS = ["safe", "unsafe"]
+
+# Jailbreak detection: multi-label (can return multiple strategy labels).
+JAILBREAK_TASK: dict[str, list[str]] = {
+    "jailbreak_detection": [
+        "ignore_previous",
+        "role_play",
+        "hijack_context",
+        "sqli",
+        "xss",
+        "prompt_injection",
+        "other",
+    ],
+}
+
+# Toxicity categorization: multi-label.
+TOXICITY_TASK: dict[str, list[str]] = {
+    "prompt_toxicity": [
+        "hate_speech",
+        "harassment",
+        "violence",
+        "self_harm",
+        "sexual",
+        "child_safety",
+        "privacy_violation",
+        "misinformation",
+        "other",
+    ],
+}
+
+
+@dataclass
+class GliguardResult:
+    """Result from GLiGuard classification."""
+
+    is_safe: bool
+    confidence: float
+    jailbreak_labels: list[str] = field(default_factory=list)
+    toxicity_labels: list[str] = field(default_factory=list)
+    model_version: str = ""
+    error: str | None = None
+
+
+# Lazy-loaded singleton GLiGuard model instance.
+_gliguard_model: "GLiNER2 | None" = None
+_gliguard_load_error: str | None = None
+
+
+def _get_gliguard_model() -> "GLiNER2 | None":
+    """Lazy-load GLiGuard model. Returns None if not available or disabled."""
+    global _gliguard_model, _gliguard_load_error
+
+    if not GLIGUARD_ENABLED:
+        return None
+
+    if _gliguard_model is not None or _gliguard_load_error is not None:
+        return _gliguard_model
+
+    try:
+        from gliner2 import GLiNER2  # type: ignore[import-not-found]
+
+        logger.info("Loading GLiGuard model (fastino/gliguard-LLMGuardrails-300M)...")
+        _gliguard_model = GLiNER2.from_pretrained("fastino/gliguard-LLMGuardrails-300M")
+        # CPU-first design — run on CPU unless GPU is explicitly preferred
+        device = os.getenv("GLIGUARD_DEVICE", "cpu")
+        _gliguard_model.to(device)
+        logger.info("GLiGuard model loaded on device=%s", device)
+        return _gliguard_model
+
+    except ImportError:
+        _gliguard_load_error = "gliner2 not installed — install with: pip install 'gliner2[local]'"
+        logger.warning("GLiGuard disabled: %s", _gliguard_load_error)
+        return None
+    except Exception as exc:  # noqa: BLE001
+        _gliguard_load_error = str(exc)
+        logger.warning("GLiGuard failed to load: %s — disabling", exc)
+        return None
+
+
+def check_with_gliguard(text: str, threshold: float | None = None) -> GliguardResult:
+    """Classify a memory record for safety using GLiGuard.
+
+    Layer 2b defense — learned safety classifier that catches novel injection
+    patterns regex patterns miss. Optional: enabled when GLIGUARD_ENABLED=true.
+
+    Args:
+        text: The memory text to classify (already regex-filtered by Layer 2a).
+        threshold: Override the default GLIGUARD_THRESHOLD for this call.
+
+    Returns:
+        GliguardResult with safety classification and confidence.
+        On error or when GLiGuard is disabled, returns GliguardResult(is_safe=True)
+        so the pipeline continues without blocking.
+    """
+    if threshold is None:
+        threshold = GLIGUARD_THRESHOLD
+
+    model = _get_gliguard_model()
+
+    # GLiGuard unavailable — degrade gracefully
+    if model is None:
+        return GliguardResult(
+            is_safe=True,
+            confidence=1.0,
+            error=_gliguard_load_error or "GLiGuard not enabled",
+        )
+
+    try:
+        result = model.classify_text(
+            text,
+            {
+                "prompt_safety": SAFETY_LABELS,
+                **JAILBREAK_TASK,
+                **TOXICITY_TASK,
+            },
+            threshold=threshold,
+        )
+
+        prompt_safety = result.get("prompt_safety", "safe")
+        is_safe = prompt_safety == "safe"
+
+        # Extract multi-label outputs
+        jailbreak_labels: list[str] = []
+        toxicity_labels: list[str] = []
+
+        jb = result.get("jailbreak_detection", [])
+        if isinstance(jb, list):
+            jailbreak_labels = jb
+
+        tox = result.get("prompt_toxicity", [])
+        if isinstance(tox, list):
+            toxicity_labels = tox
+
+        # Confidence: use 1.0 - distance from threshold proxy
+        # If unsafe, assume moderate confidence; if safe, high confidence
+        confidence = 0.95 if is_safe else 0.75
+
+        logger.debug(
+            "GLiGuard: is_safe=%s jailbreak=%s toxicity=%s",
+            is_safe,
+            jailbreak_labels,
+            toxicity_labels,
+        )
+
+        return GliguardResult(
+            is_safe=is_safe,
+            confidence=confidence,
+            jailbreak_labels=jailbreak_labels,
+            toxicity_labels=toxicity_labels,
+            model_version="gliguard-LLMGuardrails-300M",
+        )
+
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("GLiGuard classification failed: %s — allowing text through", exc)
+        return GliguardResult(is_safe=True, confidence=0.0, error=str(exc))
+
+
+def filter_memories_with_gliguard(
+    records: list[dict],
+    text_key: str = "text",
+) -> tuple[list[dict], list[GliguardResult]]:
+    """Filter memory records through Layer 2a (regex) then Layer 2b (GLiGuard).
+
+    This is the full Layer 2 pipeline:
+      1. filter_memory_for_prompt() — regex stripping (always runs)
+      2. check_with_gliguard() — learned safety classifier (if GLIGUARD_ENABLED)
+
+    Returns:
+        Tuple of (filtered_records, gliguard_results) aligned by index.
+        Records flagged as unsafe by GLiGuard are kept with _gliguard_suspicious=True
+        and the action is logged — they are NOT silently dropped (Layer 2b is advisory).
+
+    Args:
+        records: List of memory record dicts.
+        text_key: Key name for the text field.
+    """
+    filtered = filter_memories_for_prompt(records, text_key)
+    gliguard_results: list[GliguardResult] = []
+
+    for record in filtered:
+        gl_result = check_with_gliguard(record.get(text_key, ""))
+        gliguard_results.append(gl_result)
+
+        if not gl_result.is_safe:
+            logger.warning(
+                "GLiGuard flagged memory record %s as unsafe: "
+                "jailbreak=%s toxicity=%s",
+                record.get("id", "?"),
+                gl_result.jailbreak_labels,
+                gl_result.toxicity_labels,
+            )
+            record["_gliguard_suspicious"] = True
+            record["_gliguard_jailbreak"] = gl_result.jailbreak_labels
+            record["_gliguard_toxicity"] = gl_result.toxicity_labels
+        else:
+            record["_gliguard_suspicious"] = False
+
+    return filtered, gliguard_results
 
 
 # ---------------------------------------------------------------------------------------
