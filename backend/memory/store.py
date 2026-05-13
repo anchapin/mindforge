@@ -193,20 +193,20 @@ class SharedMemoryStore:
 
         # Episodic layer
         if "episodic" in memory_types:
-            records = self._episodic.query_by_project(
+            episodic_records = self._episodic.query_by_project(
                 project_id=project_id,
                 task_type=task_type,
                 limit=top_k,
             )
-            if not records:
-                records = self._episodic.query_by_project(
+            if not episodic_records:
+                episodic_records = self._episodic.query_by_project(
                     project_id=project_id,
                     limit=top_k,
                 )
-            formatted = "\n".join(r.format() for r in records)
+            formatted = "\n".join(r.format() for r in episodic_records)
             results.append(MemoryResult(
                 memory_type="episodic",
-                records=records,
+                records=episodic_records,
                 formatted=formatted or "(no recent similar tasks)",
             ))
 
@@ -249,13 +249,15 @@ class SharedMemoryStore:
         **kwargs,
     ) -> list[str]:
         """Direct (non-queued) semantic write — used when you need IDs immediately."""
-        from .sanitizer import ContentSource, sanitize_for_memory
+        from .sanitizer import ContentSource, SanitizationResult, sanitize_for_memory
 
-        sanitized, meta = sanitize_for_memory(
+        sanitization: SanitizationResult = sanitize_for_memory(
             text=text,
             source=ContentSource.SKILL_OUTPUT,
             project_id=project_id,
         )
+        sanitized_text = sanitization.text
+        meta = sanitization.as_metadata()
         if meta.get("flags"):
             logger.warning(
                 "Suspicious semantic write flagged: risk=%.2f, flags=%s",
@@ -264,7 +266,7 @@ class SharedMemoryStore:
             )
 
         return await self._semantic.add(
-            text=sanitized,
+            text=sanitized_text,
             project_id=project_id,
             task_id=task_id,
             agent_role=agent_role,

@@ -212,7 +212,7 @@ class SemanticMemory:
     # Read path
     # ---------------------------------------------------------------------------
 
-    def search(
+    async def search(
         self,
         query: str,
         project_id: str | None = None,
@@ -266,6 +266,7 @@ class SemanticMemory:
                 id=record_id,
                 project_id=meta.get("project_id"),
                 text=doc,
+                embedding=None,
                 metadata=meta,
                 hmac_sig=sig,
             ))
@@ -318,7 +319,7 @@ class SemanticMemory:
             use_bm25 = False
 
         # Vector search
-        vector_results = self.search(query, project_id=project_id, top_k=top_k * 2)
+        vector_results = await self.search(query, project_id=project_id, top_k=top_k * 2)
         vector_by_id = {r.id: r for r in vector_results}
 
         # BM25 search
