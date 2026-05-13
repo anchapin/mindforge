@@ -6,13 +6,12 @@ Provides shared resources: database connections, memory store, WebSocket manager
 from __future__ import annotations
 
 import os
-from contextlib import asynccontextmanager
-from typing import AsyncIterator
-
 import sqlite3
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
+from ..api.websocket import WSConnectionManager, ws_manager
 from ..memory.store import SharedMemoryStore
-from ..api.websocket import ws_manager, WSConnectionManager
 
 DATA_DIR = os.getenv("DATA_DIR", "/app/data")
 DB_PATH = os.path.join(DATA_DIR, "mindforge.db")

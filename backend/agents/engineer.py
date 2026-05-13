@@ -11,7 +11,7 @@ import json as json_lib
 import logging
 from typing import Any
 
-from ..llm.router import llm_complete, InferenceTier
+from ..llm.router import InferenceTier, llm_complete
 
 logger = logging.getLogger(__name__)
 

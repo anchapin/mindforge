@@ -11,9 +11,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from enum import Enum
 
-from ..llm.router import llm_complete, InferenceTier
+from ..llm.router import InferenceTier, llm_complete
 
 logger = logging.getLogger(__name__)
 

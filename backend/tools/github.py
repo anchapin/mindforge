@@ -1,8 +1,11 @@
 """GitHub API tool. Phase 1 integration -- personal access token (not OAuth)."""
 
 from __future__ import annotations
-import httpx
+
 import logging
+
+import httpx
+
 from .base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)

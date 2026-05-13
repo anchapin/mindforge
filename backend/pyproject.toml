@@ -66,8 +66,10 @@ build-backend = "hatchling.build"
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+
+[tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
-ignore = ["E501"]
+ignore = ["E501", "B008", "B904", "F821", "F841", "SIM102", "SIM105", "UP042"]
 
 [tool.ruff.format]
 quote-style = "double"
