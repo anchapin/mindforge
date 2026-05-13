@@ -60,5 +60,5 @@ async def check_ollama() -> bool:
 
 
 async def check_all() -> dict[str, bool]:
-    results = await check_pglite()
+    results: dict[str, bool] = {"pglite": await check_pglite()}
     return results
