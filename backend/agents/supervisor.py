@@ -15,14 +15,42 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 from langgraph.graph import StateGraph, END
-from langgraph.checkpoint.sqlite import SqliteSaver
-from sqlalchemy import create_engine
+from langgraph.checkpoint.memory import MemorySaver
 
 from ..memory.store import SharedMemoryStore
 from ..llm.router import llm_complete, InferenceTier
-from .routing import AGENT_ROLES, route_to_agent, classify_task_type
+from .routing import AGENT_ROLES, route_to_agent
+from . import coo, cmo, researcher, engineer
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------------------
+# Task type classification
+# ---------------------------------------------------------------------------------------
+
+TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
+    ("github",      ["github", "commit", "pr ", "pull request", "repository", "git"]),
+    ("email",       ["email", "reply", "inbox", "mail", "send", "draft"]),
+    ("research",    ["research", "find", "look up", "lookup", "analyze", "competitor", "market"]),
+    ("finance",     ["refund", "invoice", "billing", "stripe", "revenue", "cost"]),
+    ("engineering", ["code", "deploy", "build", "debug", "ship", "unit test", "auth module"]),
+    ("operations",  ["schedule", "calendar", "meeting", "task", "project", "board"]),
+    ("content",     ["write", "blog", "post", "tweet", "linkedin", "copy"]),
+]
+
+
+def classify_task_type(query: str) -> str:
+    """Rule-based keyword task classifier. Zero cost, zero latency.
+
+    Used for episodic memory scoping and agent routing.
+    Falls back to LLM-based classify_intent() for skill triggering.
+    """
+    query_lower = query.lower()
+    for task_type, keywords in TASK_TYPE_RULES:
+        if any(kw in query_lower for kw in keywords):
+            return task_type
+    return "general"
+
 
 # ---------------------------------------------------------------------------------------
 # Supervisor state
@@ -42,7 +70,7 @@ class AgentState:
     error: str | None = None
 
     def model_copy(self, update: dict[str, Any]) -> "AgentState":
-        """Shallow copy with field updates (compatible with Pydantic-like usage)."""
+        """Shallow copy with field updates."""
         import copy
         new_state = copy.copy(self)
         for k, v in update.items():
@@ -51,11 +79,34 @@ class AgentState:
 
 
 # ---------------------------------------------------------------------------------------
+# Agent dispatch
+# ---------------------------------------------------------------------------------------
+
+async def _run_agent(
+    agent_role: str,
+    task_description: str,
+    memory_context: str,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    """Dispatch to the appropriate agent by role."""
+    if agent_role == "coo":
+        return await coo.run(task_description, memory_context, context)
+    elif agent_role == "cmo":
+        return await cmo.run(task_description, memory_context, context)
+    elif agent_role == "researcher":
+        return await researcher.run(task_description, memory_context, context)
+    elif agent_role == "engineer":
+        return await engineer.run(task_description, memory_context, context)
+    else:
+        return {"summary": f"Unknown agent role: {agent_role}", "result": "", "next_steps": []}
+
+
+# ---------------------------------------------------------------------------------------
 # Supervisor node functions
 # ---------------------------------------------------------------------------------------
 
 def supervisor_node(state: AgentState) -> AgentState:
-    """Router node - decides which specialist agent handles the task.
+    """Router node — decides which specialist agent handles the task.
 
     Uses keyword-based classify_task_type() first (zero cost/latency).
     """
@@ -82,54 +133,45 @@ async def specialist_node(
     memory_store: SharedMemoryStore,
 ) -> AgentState:
     """Call the specialist agent (CMO, Researcher, Engineer, or COO-self)."""
-    role_prompt = AGENT_ROLES.get(state.agent_role, AGENT_ROLES["coo"])
+    task_type = state.context.get("task_type", "general")
+    project_id = state.context.get("project_id")
 
     memory_context = await memory_store.read(
         query=state.current_task,
-        project_id=state.context.get("project_id"),
+        project_id=project_id,
         memory_types=["semantic", "episodic", "style"],
         top_k=5,
     )
 
-    system_msg = (
-        role_prompt + "\n\n" +
-        memory_context + "\n\n" +
-        "## Current Task\n" + state.current_task + "\n\n" +
-        "## Output Format\n" +
-        "Return your response as a JSON object with fields: summary, result, next_steps.\n" +
-        "Do not include any fields not listed above."
-    )
-
     try:
-        response = await llm_complete(
-            system_msg,
-            tier=InferenceTier.CLOUD_HEAVY,
+        agent_result = await _run_agent(
+            state.agent_role,
+            state.current_task,
+            memory_context,
+            state.context,
         )
 
-        result_data = json.loads(response)
         logger.info(
-            "Specialist completed: task_id=%s agent=%s",
-            state.task_id, state.agent_role,
+            "Specialist completed: task_id=%s agent=%s result=%s",
+            state.task_id, state.agent_role, agent_result.get("summary", ""),
         )
 
         return state.model_copy(update={
             "memory_context": memory_context,
-            "result": result_data,
+            "result": agent_result,
             "messages": state.messages + [
-                {"role": state.agent_role, "content": result_data.get("result", "")},
+                {"role": state.agent_role, "content": agent_result.get("result", "")},
             ],
         })
-    except json.JSONDecodeError as exc:
-        logger.error("Specialist returned non-JSON response: %s", exc)
-        return state.model_copy(update={
-            "error": f"Specialist parse error: {exc}",
-        })
     except Exception as exc:
-        logger.exception("Specialist error: task_id=%s agent=%s", state.task_id, state.agent_role)
+        logger.exception(
+            "Specialist error: task_id=%s agent=%s",
+            state.task_id, state.agent_role,
+        )
         return state.model_copy(update={"error": str(exc)})
 
 
-def should_continue(state: AgentState) -> Literal["supervisor", "__end__"]:
+def should_continue(state: AgentState) -> Literal["supervisor", END]:
     """Graph routing: after specialist, either loop back or end."""
     if state.error and "retry" in state.context.get("flags", []):
         return "supervisor"
@@ -163,9 +205,22 @@ def build_supervisor_graph(
     )
 
     if checkpointer_path:
-        engine = create_engine(f"sqlite:///{checkpointer_path}")
-        checkpointer = SqliteSaver(engine)
-        return builder.compile(checkpointer=checkpointer)
+        # SQLite-based checkpointer for persistence across restarts.
+        # Install langgraph-checkpoint-sqlite for production use:
+        #   pip install langgraph-checkpoint-sqlite
+        # For now, fall back to in-memory saver.
+        try:
+            from langgraph.checkpoint.sqlite import SqliteSaver
+            from sqlalchemy import create_engine
+            engine = create_engine(f"sqlite:///{checkpointer_path}")
+            checkpointer = SqliteSaver(engine)
+            return builder.compile(checkpointer=checkpointer)
+        except ImportError:
+            logger.warning(
+                "SqliteSaver not available, using MemorySaver (no persistence). "
+                "Install langgraph-checkpoint-sqlite for persistence."
+            )
+            return builder.compile(checkpointer=MemorySaver())
 
     return builder.compile()
 
@@ -227,3 +282,21 @@ class SupervisorRunner:
         except Exception as exc:
             logger.exception("Supervisor run failed: task_id=%s", tid)
             return initial_state.model_copy(update={"error": str(exc)})
+
+    async def run_with_skill(
+        self,
+        skill_execution_context: dict[str, Any],
+        task_id: str | None = None,
+        config: dict | None = None,
+    ) -> AgentState:
+        """Run supervisor with a skill execution context.
+
+        Used by the skill executor to delegate the agent node to the supervisor.
+        """
+        return await self.run(
+            task_description=skill_execution_context.get("task_description", ""),
+            task_id=task_id,
+            project_id=skill_execution_context.get("project_id"),
+            skill_name=skill_execution_context.get("skill_name"),
+            config=config,
+        )

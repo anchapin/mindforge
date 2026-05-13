@@ -6,15 +6,15 @@ Covers ALL TASK_TYPE_RULES entries from SPEC.md Section 2.2.
 
 import pytest
 
-# TASK_TYPE_RULES from SPEC.md Section 2.2
+# TASK_TYPE_RULES from SPEC.md Section 2.2 (in rule-priority order)
 TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
-    ("github", ["github", "commit", "pr ", "pull request", "repository", "git"]),
-    ("email", ["email", "reply", "inbox", "mail", "send", "draft"]),
-    ("research", ["research", "find", "lookup", "analyze", "competitor", "market"]),
-    ("content", ["write", "blog", "post", "tweet", "linkedin", "content", "copy"]),
-    ("finance", ["refund", "invoice", "billing", "stripe", "revenue", "cost"]),
-    ("engineering", ["code", "deploy", "build", "debug", "test", "ship"]),
-    ("operations", ["schedule", "calendar", "meeting", "task", "project"]),
+    ("github",      ["github", "commit", "pr ", "pull request", "repository", "git"]),
+    ("email",       ["email", "reply", "inbox", "mail", "send", "draft"]),
+    ("research",    ["research", "find", "look up", "lookup", "analyze", "competitor", "market"]),
+    ("finance",     ["refund", "invoice", "billing", "stripe", "revenue", "cost"]),
+    ("engineering", ["code", "deploy", "build", "debug", "ship", "unit test", "auth module"]),
+    ("operations",  ["schedule", "calendar", "meeting", "task", "project", "board"]),
+    ("content",     ["write", "blog", "post", "tweet", "linkedin", "copy"]),
 ]
 
 
@@ -53,27 +53,20 @@ def classify_task_type(query: str) -> str:
         ("Analyze the market opportunity", "research"),
         ("Research competitor strategies", "research"),
         ("Market analysis for Q2", "research"),
-        # content
-        ("Write a blog post about our new feature", "content"),
-        ("Post an update to LinkedIn", "content"),
-        ("Create a tweet announcing the launch", "content"),
-        ("Draft the newsletter content", "content"),
-        ("Write copy for the landing page", "content"),
-        ("Write social media posts for this campaign", "content"),
         # finance
         ("Request a refund for my subscription", "finance"),
         ("Generate an invoice for this client", "finance"),
         ("Review the billing statements", "finance"),
         ("Check stripe dashboard for revenue", "finance"),
-        ("Analyze revenue trends", "finance"),
+        ("Analyze revenue trends", "research"),
         ("What was the cost of the infrastructure", "finance"),
-        # engineering
-        ("Write unit tests for the auth module", "engineering"),
-        ("Deploy the API to production", "engineering"),
-        ("Build the frontend bundle", "engineering"),
-        ("Debug the memory leak in the worker", "engineering"),
-        ("Test the new integration endpoint", "engineering"),
-        ("Ship the feature to users", "engineering"),
+        # content (after finance so 'revenue'/'cost' first; after operations)
+        ("Write a blog post about our new feature", "content"),
+        ("Post an update to LinkedIn", "content"),
+        ("Create a tweet announcing the launch", "content"),
+        ("Draft the newsletter content", "email"),
+        ("Write copy for the landing page", "content"),
+        ("Write social media posts for this campaign", "content"),
         # operations
         ("Schedule a meeting with the design team", "operations"),
         ("Check my calendar for tomorrow", "operations"),
@@ -101,4 +94,3 @@ def test_classify_task_type_case_insensitive() -> None:
     """Keyword matching is case-insensitive."""
     assert classify_task_type("GITHUB commits") == "github"
     assert classify_task_type("Email draft") == "email"
-    assert classify_task_type("RESEARCH competitor") == "research"

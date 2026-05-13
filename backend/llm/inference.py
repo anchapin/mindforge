@@ -26,8 +26,10 @@ from backend.exceptions import BudgetExceeded, RateLimitError
 
 LLM_RETRY_CONFIG = {
     "max_attempts": 3,
+    "initial": 1,
+    "max_wait": 60,
     "backoff_factor": 2,
-    "jitter": True,
+    "jitter": 1,
 }
 
 
@@ -133,8 +135,10 @@ class OpenRouterClient:
     @retry(
         stop=stop_after_attempt(LLM_RETRY_CONFIG["max_attempts"]),
         wait=wait_exponential_jitter(
-            jitter=LLM_RETRY_CONFIG["jitter"],
-            base=LLM_RETRY_CONFIG["backoff_factor"],
+            initial=LLM_RETRY_CONFIG.get("initial", 1),
+            max=LLM_RETRY_CONFIG.get("max_wait", 60),
+            exp_base=LLM_RETRY_CONFIG.get("backoff_factor", 2),
+            jitter=LLM_RETRY_CONFIG.get("jitter", 1),
         ),
         retry=retry_if_exception_type((RateLimitError, TimeoutError)),
         reraise=True,

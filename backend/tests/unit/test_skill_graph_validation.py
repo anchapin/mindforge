@@ -45,7 +45,7 @@ class MissingNodeError(SkillGraphError):
     pass
 
 
-class ApprovalGateWithNoNextError(SkillGraphError):
+class ApprovalGateWithNoNext(SkillGraphError):
     """Raised when an approval node has no outgoing edges."""
 
     pass
@@ -79,12 +79,15 @@ def validate_skill_graph(skill_data: dict) -> None:
                 f"Edge references to='{to_id}' which does not exist"
             )
 
-    # Build outgoing adjacency map
+# Build outgoing adjacency map
     outgoing: dict[str, list[str]] = {n["id"]: [] for n in raw_nodes}
     for edge in raw_edges:
         outgoing[edge.get("from", "")].append(edge.get("to", ""))
 
-    # Rule 3: approval nodes must have at least one outgoing edge
+    # Local errors list for Rule 1 (cycles)
+    errors: list[str] = []
+
+    # Rule 1: must be a DAG (no cycles) — iterative DFS with explicit stack.
     for node in raw_nodes:
         node_id = node["id"]
         if node.get("approval") is True and not outgoing.get(node_id):
@@ -92,39 +95,66 @@ def validate_skill_graph(skill_data: dict) -> None:
                 f"Approval node '{node_id}' has no outgoing edges"
             )
 
-    # Rule 1: must be a DAG (no cycles) — DFS cycle detection on directed edges
-    def has_cycle_from(
-        start: str, visited: set[str], rec_stack: set[str]
-    ) -> bool:
-        stack = [(start, iter(outgoing.get(start, [])))]
-        path: list[str] = []
+    # Rule 1: must be a DAG (no cycles) — iterative DFS with explicit stack.
+    # Uses on_stack set to track which nodes are currently on the DFS call stack.
+    # A cycle exists iff we encounter a node already on the stack.
+# Self-loops: check each node directly against raw_edges
+    for node in raw_nodes:
+        for edge in raw_edges:
+            frm = edge.get("from", "")
+            to = edge.get("to", "")
+            if frm == node["id"] and to == node["id"]:
+                errors.append(f"Self-loop detected on node: {node['id']}")
 
-        while stack:
-            node_id, neighbors_iter = stack[-1]
-            try:
-                neighbor = next(neighbors_iter)
-            except StopIteration:
-                stack.pop()
-                if path:
-                    path.pop()
-                continue
+    class CycleChecker:
+        __slots__ = ("on_stack",)
 
-            if neighbor in rec_stack:
-                return True
-            if neighbor in visited:
-                continue
+        def __init__(self) -> None:
+            self.on_stack: set[str] = set()
 
-            visited.add(neighbor)
-            path.append(neighbor)
-            rec_stack.add(neighbor)
-            stack.append((neighbor, iter(outgoing.get(neighbor, []))))
+        def has_cycle_from(self, start: str, visited: set[str]) -> bool:
+            stack: list[tuple[str, iter]] = [(start, iter([
+                e.get("to", "") for e in raw_edges if e.get("from") == start
+            ]))]
+            while stack:
+                node_id, neighbors_iter = stack[-1]
+                try:
+                    neighbor = next(neighbors_iter)
+                except StopIteration:
+                    stack.pop()
+                    self.on_stack.discard(node_id)
+                    continue
+                if neighbor in self.on_stack:
+                    return True
+                if neighbor in visited:
+                    continue
+                visited.add(neighbor)
+                self.on_stack.add(neighbor)
+                stack.append((neighbor, iter([
+                    e.get("to", "") for e in raw_edges if e.get("from") == neighbor
+                ])))
+            return False
 
-        return bool(path and path[-1] == start)
+    if raw_nodes:
+        checker = CycleChecker()
+        visited: set[str] = set()
+        for node_id in {n["id"] for n in raw_nodes}:
+            if node_id not in visited:
+                if checker.has_cycle_from(node_id, visited):
+                    errors.append(f"Cycle detected: {node_id} -> ...")
 
-    visited: set[str] = set()
-    rec_stack: set[str] = set()
-        if node_id not in visited and has_cycle_from(node_id, visited, rec_stack):
-            raise CycleDetectedError(f"Cycle detected involving node '{node_id}'")
+    # Raise on first error (preserves original test contract)
+    for error in errors:
+        if "Self-loop" in error:
+            raise CycleDetectedError(error)
+        if "Cycle detected" in error:
+            raise CycleDetectedError(error)
+        if "does not exist" in error:
+            raise MissingNodeError(error)
+        if "Approval node" in error and "no outgoing edges" in error:
+            raise ApprovalGateWithNoNext(error)
+
+    return errors
 
 
 # ---------------------------------------------------------------------------
