@@ -417,13 +417,16 @@ async def llm_complete(
     Raises:
         RuntimeError: When all models in the fallback chain are unavailable.
     """
-    return await LLM_ROUTER.complete(
+    result = await LLM_ROUTER.complete(
         prompt=prompt,
         tier=tier,
         system=system,
         agent_role=agent_role,
         stream=False,
     )
+    # complete() returns str when stream=False
+    assert isinstance(result, str), f"expected str, got {type(result)}"
+    return result
 
 
 async def llm_complete_stream(
@@ -433,7 +436,7 @@ async def llm_complete_stream(
     agent_role: str | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream a prompt completion token by token."""
-    generator = await LLM_ROUTER.complete(
+    result = await LLM_ROUTER.complete(
         prompt=prompt,
         tier=tier,
         system=system,
@@ -441,4 +444,5 @@ async def llm_complete_stream(
         stream=True,
     )
     # The router returns a generator directly when stream=True
-    return generator
+    assert isinstance(result, AsyncGenerator), f"expected AsyncGenerator, got {type(result)}"
+    return result

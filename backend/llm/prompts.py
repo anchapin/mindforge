@@ -21,8 +21,12 @@ from __future__ import annotations
 import os
 import re
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import structlog
+
+if TYPE_CHECKING:
+    from gliner2 import GLiNER2  # noqa: F401
 
 from ..memory.sanitizer import (
     INJECTION_WEIGHT_PATTERNS,
@@ -233,11 +237,11 @@ class GliguardResult:
 
 
 # Lazy-loaded singleton GLiGuard model instance.
-_gliguard_model: GLiNER2 | None = None
+_gliguard_model: GLiNER2 | None = None  # type: ignore[name-defined] — TYPE_CHECKING import
 _gliguard_load_error: str | None = None
 
 
-def _get_gliguard_model() -> GLiNER2 | None:
+def _get_gliguard_model() -> GLiNER2 | None:  # type: ignore[name-defined]
     """Lazy-load GLiGuard model. Returns None if not available or disabled."""
     global _gliguard_model, _gliguard_load_error
 
@@ -254,7 +258,7 @@ def _get_gliguard_model() -> GLiNER2 | None:
         _gliguard_model = GLiNER2.from_pretrained("fastino/gliguard-LLMGuardrails-300M")
         # CPU-first design — run on CPU unless GPU is explicitly preferred
         device = os.getenv("GLIGUARD_DEVICE", "cpu")
-        _gliguard_model.to(device)
+        _gliguard_model.to(device)  # type: ignore[union-attr]
         logger.info("GLiGuard model loaded on device=%s", device)
         return _gliguard_model
 

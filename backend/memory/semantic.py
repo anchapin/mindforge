@@ -104,12 +104,10 @@ class SemanticMemory:
                 settings=ChromaSettings(anonymized_telemetry=False),
             )
         else:
-            # Client-server mode
-            self._client = chromadb.Client(
-                api=chromadb.http.HTTPClient(
-                    host=chroma_host or CHROMA_HOST,
-                    settings=ChromaSettings(anonymized_telemetry=False),
-                )
+            # Client-server mode (ChromaDB 1.x API)
+            self._client = chromadb.HttpClient(
+                host=chroma_host or CHROMA_HOST,
+                settings=ChromaSettings(anonymized_telemetry=False),
             )
 
         self._collection = self._client.get_or_create_collection(
@@ -214,7 +212,7 @@ class SemanticMemory:
     # Read path
     # ---------------------------------------------------------------------------
 
-    def search(
+    async def search(
         self,
         query: str,
         project_id: str | None = None,
@@ -230,8 +228,8 @@ class SemanticMemory:
         except ImportError:
             pass  # type: ignore[no-redef]
 
-        # Embed query
-        query_embs = embed_texts([query])
+        # Embed query (async)
+        query_embs = await embed_texts([query])
         if not query_embs:
             return []
         query_emb = query_embs[0]
@@ -325,7 +323,7 @@ class SemanticMemory:
             use_bm25 = False
 
         # Vector search
-        vector_results = self.search(query, project_id=project_id, top_k=top_k * 2)
+        vector_results = await self.search(query, project_id=project_id, top_k=top_k * 2)
         vector_by_id = {r.id: r for r in vector_results}
 
         # BM25 search
