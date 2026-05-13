@@ -285,7 +285,7 @@ class LLMRouter:
                 continue  # circuit open, skip
 
             import ollama  # type: ignore[no-redef]
-        try:
+            try:
                 if stream:
                     return self._openrouter_stream(
                         cfg, system, prompt, model=model, agent_role=agent_role
