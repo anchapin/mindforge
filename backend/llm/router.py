@@ -423,7 +423,7 @@ async def llm_complete(
         system=system,
         agent_role=agent_role,
         stream=False,
-    )
+    )  # type: ignore[return-value]
 
 
 async def llm_complete_stream(
@@ -441,4 +441,4 @@ async def llm_complete_stream(
         stream=True,
     )
     # The router returns a generator directly when stream=True
-    return generator
+    return generator  # type: ignore[return-value]

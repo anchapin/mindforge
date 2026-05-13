@@ -58,6 +58,7 @@ class AgentState:
     """LangGraph state for the supervisor workflow."""
     current_task: str = ""
     task_id: str = ""
+    project_id: str = ""
     agent_role: str = "coo"
     memory_context: str = ""
     skill_name: str | None = None
@@ -168,9 +169,9 @@ async def specialist_node(
         return state.model_copy(update={"error": str(exc)})
 
 
-def should_continue(state: AgentState) -> Literal["supervisor", END]:
+def should_continue(state: AgentState) -> Literal["supervisor", END]:  # type: ignore[return-value]
     """Graph routing: after specialist, either loop back or end."""
-    if state.error and "retry" in state.context.get("flags", []):
+    if state.error and "retry" in state.context.get("flags", []):  # type: ignore[union-attr]
         return "supervisor"
     return END
 
@@ -263,9 +264,9 @@ class SupervisorRunner:
         initial_state = AgentState(
             current_task=task_description,
             task_id=tid,
-            project_id=project_id,
+            project_id=project_id or "",
             skill_name=skill_name,
-            context={"project_id": project_id},
+            context={"project_id": project_id or ""},
         )
 
         logger.info(

@@ -17,7 +17,7 @@ class StripeTool(BaseTool):  # type: ignore[override]
     description = "Fetch Stripe revenue, charges, and customer data (read-only)"
     required_integrations = ["stripe"]
 
-    async def execute(self, action: str, **kwargs) -> ToolResult:
+    async def execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901
         start = time.monotonic()
 
         api_key = kwargs.get("api_key", "")
