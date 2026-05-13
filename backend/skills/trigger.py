@@ -6,7 +6,7 @@ From SPEC.md Section 2.3 — trigger_skill() entry point.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from backend.skills.models import Skill
 from backend.skills.registry import get_registry
@@ -83,14 +83,16 @@ async def _classify_intent(
     )
 
     try:
+        # complete() is async; stream=False always returns str
         response = await llm_router.complete(
             prompt=prompt,
             tier=None,
             system="You are a concise task classifier. Output only the intent label.",
             agent_role="cmo",
         )
-        result = response if isinstance(response, str) else await response
-        return result.strip().lower().replace(" ", "_")
+        # Type annotation is str | AsyncGenerator; stream=False guarantees str
+        result = cast(str, response).strip().lower().replace(" ", "_")
+        return result
     except Exception as exc:  # pragma: no cover
         logger.warning("intent classification failed: %s", exc)
         return "general"
