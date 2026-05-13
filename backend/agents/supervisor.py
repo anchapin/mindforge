@@ -18,6 +18,7 @@ from langgraph.graph import StateGraph, END
 from langgraph.checkpoint.memory import MemorySaver
 
 from ..memory.store import SharedMemoryStore
+from ..llm.prompts import requires_memory_approval_gate, is_high_stakes_action
 from ..llm.router import llm_complete, InferenceTier
 from .routing import AGENT_ROLES, route_to_agent
 from . import coo, cmo, researcher, engineer
@@ -172,9 +173,36 @@ async def specialist_node(
 
 
 def should_continue(state: AgentState) -> Literal["supervisor", END]:
-    """Graph routing: after specialist, either loop back or end."""
+    """Graph routing: after specialist, either loop back or end.
+
+    Layer 3 — Approval gate amplification (§3b.8):
+    If the specialist wants to execute a high-stakes action AND memory
+    was the dominant context (>50%), force the draft-approval cycle
+    by returning to supervisor to wait for human approval.
+    """
     if state.error and "retry" in state.context.get("flags", []):
         return "supervisor"
+
+    # Layer 3: memory-driven high-stakes actions require approval
+    result = state.result or {}
+    proposed_action = result.get("proposed_action", "")
+    if (
+        proposed_action
+        and is_high_stakes_action(proposed_action)
+        and requires_memory_approval_gate(
+            action=proposed_action,
+            memory_context_ratio=state.context.get("memory_ratio", 0.0),
+        )
+    ):
+        logger.info(
+            "Layer 3 approval gate triggered: action=%s memory_ratio=%.2f — awaiting human approval",
+            proposed_action,
+            state.context.get("memory_ratio", 0.0),
+        )
+        # Force pending_approval in context and return to supervisor
+        # The human approval gate in api/routes/tasks.py will handle this
+        return END  # Supervisor will pick up the pending_approval state
+
     return END
 
 
