@@ -35,6 +35,7 @@ jobs:
           OLLAMA_BASE_URL=http://ollama:11434
           LOG_LEVEL=INFO
           EOF
+          touch .env.local
       - run: docker compose --profile test up -d
       - run: sleep 10  # wait for services
       - run: pytest backend/tests/unit -q --tb=short
