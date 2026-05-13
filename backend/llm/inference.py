@@ -9,6 +9,7 @@ import asyncio
 import os
 import time
 from collections.abc import AsyncGenerator
+from typing import cast
 
 import httpx
 from tenacity import (
@@ -19,16 +20,15 @@ from tenacity import (
 )
 
 from backend.exceptions import BudgetExceeded, RateLimitError
+from backend.llm.router import LLM_ROUTER, InferenceTier
 
 # ── Retry Config ──────────────────────────────────────────────────────────────
 
 
 LLM_RETRY_CONFIG = {
     "max_attempts": 3,
-    "initial": 1,
-    "max_wait": 60,
     "backoff_factor": 2,
-    "jitter": 1,
+    "jitter": True,
 }
 
 
@@ -134,10 +134,8 @@ class OpenRouterClient:
     @retry(
         stop=stop_after_attempt(LLM_RETRY_CONFIG["max_attempts"]),
         wait=wait_exponential_jitter(
-            initial=LLM_RETRY_CONFIG.get("initial", 1),
-            max=LLM_RETRY_CONFIG.get("max_wait", 60),
-            exp_base=LLM_RETRY_CONFIG.get("backoff_factor", 2),
-            jitter=LLM_RETRY_CONFIG.get("jitter", 1),
+            jitter=LLM_RETRY_CONFIG["jitter"],
+            exp_base=LLM_RETRY_CONFIG["backoff_factor"],
         ),
         retry=retry_if_exception_type((RateLimitError, TimeoutError)),
         reraise=True,
@@ -268,9 +266,7 @@ class OpenRouterClient:
                         import json
 
                         chunk = json.loads(data_str)
-                        token = chunk.get("choices", [{}])[0].get("delta", {}).get(
-                            "content", ""
-                        )
+                        token = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
                         if token:
                             yield token
 
@@ -301,20 +297,15 @@ async def _ollama_complete(
     import ollama
 
     try:
-        opts = {"num_predict": max_tokens, "temperature": temperature}
-        if system:
-            response = ollama.generate(
-                model=model,
-                prompt=prompt,
-                system=system,
-                options=opts,
-            )
-        else:
-            response = ollama.generate(
-                model=model,
-                prompt=prompt,
-                options=opts,
-            )
+        response = ollama.generate(
+            model=model,
+            prompt=prompt,
+            system=system if system else None,
+            options={
+                "num_predict": max_tokens,
+                "temperature": temperature,
+            },
+        )
         return response["response"]
     except ollama.ResponseError as e:
         raise RuntimeError(f"Ollama error: {e}") from e
@@ -330,30 +321,89 @@ async def _ollama_stream(
     temperature: float = 0.0,
 ) -> AsyncGenerator[str, None]:
     """Streaming response from local Ollama server."""
-    import ollama
-
-    def _generate():
-        opts = {"num_predict": max_tokens, "temperature": temperature}
-        if system:
-            return ollama.generate(
-                model=model,
-                prompt=prompt,
-                system=system,
-                options=opts,
-                stream=True,
-            )
-        return ollama.generate(
-            model=model,
-            prompt=prompt,
-            options=opts,
-            stream=True,
-        )
+    from ollama._client import AsyncClient
 
     try:
-        response = await asyncio.to_thread(_generate)
-        # ollama.generate with stream=True returns a sync iterator of GenerateResponse
-        for part in response:  # type: ignore[union-attr]
+        client = AsyncClient()
+        response = await client.generate(
+            model=model,
+            prompt=prompt,
+            system=system if system else None,
+            options={
+                "num_predict": max_tokens,
+                "temperature": temperature,
+            },
+            stream=True,
+        )
+        async for part in response:
             if "response" in part:
                 yield part["response"]
     except Exception as e:
         raise RuntimeError(f"Ollama stream failed: {e}") from e
+
+
+# ---------------------------------------------------------------------------------------
+# Module-level LLM completion wrappers (delegate to LLM_ROUTER)
+# ---------------------------------------------------------------------------------------
+
+
+async def llm_complete(
+    prompt: str,
+    tier: InferenceTier | None = None,
+    system: str = "",
+    agent_role: str | None = None,
+) -> str:
+    """Module-level LLM completion wrapper.
+
+    Delegates to LLM_ROUTER.complete() with stream=False.
+    Returns a plain string response.
+
+    Args:
+        prompt: The user prompt.
+        tier: Explicit inference tier override.
+        system: System prompt string.
+        agent_role: Agent role key for tier lookup.
+
+    Returns:
+        The complete response text.
+    """
+    result = await LLM_ROUTER.complete(
+        prompt=prompt,
+        tier=tier,
+        system=system,
+        agent_role=agent_role,
+        stream=False,
+    )
+    return cast(str, result)
+
+
+async def llm_complete_stream(
+    prompt: str,
+    tier: InferenceTier | None = None,
+    system: str = "",
+    agent_role: str | None = None,
+) -> AsyncGenerator[str, None]:
+    """Module-level streaming LLM completion wrapper.
+
+    Delegates to LLM_ROUTER.complete() with stream=True.
+    Yields tokens as they arrive.
+
+    Args:
+        prompt: The user prompt.
+        tier: Explicit inference tier override.
+        system: System prompt string.
+        agent_role: Agent role key for tier lookup.
+
+    Yields:
+        Individual tokens from the streaming response.
+    """
+    result = await LLM_ROUTER.complete(
+        prompt=prompt,
+        tier=tier,
+        system=system,
+        agent_role=agent_role,
+        stream=True,
+    )
+    # stream=True always returns AsyncGenerator; yield its tokens directly
+    async for token in cast(AsyncGenerator[str, None], result):
+        yield token

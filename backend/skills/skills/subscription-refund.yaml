@@ -1,0 +1,114 @@
+version: "1"
+name: subscription-refund
+description: >
+  Fully autonomous multi-round negotiation to recover a refund
+  for an unused SaaS subscription billing cycle.
+category: finance
+trigger:
+  type: keyword
+  keywords:
+    - refund
+    - cancel
+    - subscription
+    - billing
+    - stripe
+
+execution_graph:
+  type: directed_acyclic_graph
+  nodes:
+    - id: verify
+      agent: researcher
+      goal: >
+        Verify the subscription status via Stripe API and check usage.
+        Confirm the billing cycle and whether a refund window is still open.
+      tools:
+        - stripe_api
+      outcome_on_failure: skip_to_approve
+      retry:
+        max_attempts: 2
+        backoff_seconds: 30
+      memory_layers:
+        - semantic
+        - episodic
+
+    - id: draft
+      agent: cmo
+      goal: >
+        Draft a refund request in the user's voice.
+        Incorporate writing style from memory if available.
+        Draft must include: subject line, email body, and any attachment notes.
+      requires_approval: true
+      approval_timeout_minutes: 1440
+      memory_layers:
+        - semantic
+        - episodic
+        - style
+      output_schema:
+        type: object
+        fields:
+          - subject
+          - body
+          - attachment_urls
+
+    - id: negotiate
+      agent: engineer
+      goal: >
+        Submit the refund request via Stripe API and monitor the response.
+        Send the drafted email via the email integration.
+        Log the outcome to episodic memory.
+      tools:
+        - stripe_refund_api
+        - email_send
+      requires_approval: true
+      approval_timeout_minutes: 2880
+      retry:
+        max_attempts: 3
+        backoff_seconds: 60
+
+    - id: escalate
+      agent: coo
+      goal: >
+        Escalate to human: no response received after 48 hours from the refund request.
+        Draft a clear summary of what was attempted and the current status.
+      trigger: timeout_negotiate.exceeded
+      notification:
+        channel: dashboard
+        message: "Refund negotiation stalled — manual intervention needed"
+      memory_layers:
+        - episodic
+
+    - id: end
+      agent: coo
+      goal: Skill execution complete.
+      memory_layers: []
+
+  edges:
+    - from: verify
+      to: draft
+      condition: verify.success
+    - from: verify
+      to: escalate
+      condition: verify.failed
+    - from: draft
+      to: negotiate
+      condition: draft.approved
+    - from: draft
+      to: escalate
+      condition: draft.rejected
+    - from: draft
+      to: escalate
+      condition: draft.timeout
+    - from: negotiate
+      to: end
+      condition: negotiate.approved
+    - from: negotiate
+      to: escalate
+      condition: negotiate.rejected
+    - from: negotiate
+      to: escalate
+      condition: negotiate.timeout
+
+memory_layers:
+  - semantic
+  - episodic
+  - style

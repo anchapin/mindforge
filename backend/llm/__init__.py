@@ -1,13 +1,11 @@
 """MindForge LLM -- inference routing, circuit breakers, cost tracking."""
 
-from .prompts import (
-    HIGH_STAKES_ACTIONS,
-    filter_memories_for_prompt,
-    filter_memory_for_prompt,
-    is_high_stakes_action,
-    requires_memory_approval_gate,
-)
-from .router import LLM_ROUTER, InferenceTier, classify_tier, llm_complete, llm_complete_stream
+from .cost_tracker import BUDGET_GUARD
+from .inference import llm_complete, llm_complete_stream
+from .router import LLM_ROUTER, InferenceTier, classify_tier
+
+# Alias for backwards compatibility
+CostTracker = BUDGET_GUARD
 
 __all__ = [
     "LLM_ROUTER",
@@ -15,9 +13,6 @@ __all__ = [
     "InferenceTier",
     "llm_complete",
     "llm_complete_stream",
-    "filter_memory_for_prompt",
-    "filter_memories_for_prompt",
-    "requires_memory_approval_gate",
-    "is_high_stakes_action",
-    "HIGH_STAKES_ACTIONS",
+    "BUDGET_GUARD",
+    "CostTracker",
 ]

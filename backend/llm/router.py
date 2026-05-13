@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 import httpx
-# ollama imported lazily in _ollama_complete
 
 from backend.exceptions import BudgetExceeded
 
@@ -243,22 +242,18 @@ class LLMRouter:
         self, cfg: LLMConfig, system: str, prompt: str
     ) -> str:
         """Call local Ollama server."""
-        import ollama  # type: ignore[no-redef]
+        import ollama
+
         try:
-            opts = {"num_predict": cfg.max_tokens, "temperature": cfg.temperature}
-            if system:
-                response = ollama.generate(
-                    model=cfg.model,
-                    prompt=prompt,
-                    system=system,
-                    options=opts,
-                )
-            else:
-                response = ollama.generate(
-                    model=cfg.model,
-                    prompt=prompt,
-                    options=opts,
-                )
+            response = ollama.generate(
+                model=cfg.model,
+                prompt=prompt,
+                system=system if system else None,
+                options={
+                    "num_predict": cfg.max_tokens,
+                    "temperature": cfg.temperature,
+                },
+            )
             return response["response"]
         except Exception as e:
             raise RuntimeError(f"Ollama call failed: {e}") from e
@@ -304,7 +299,7 @@ class LLMRouter:
                     await cb.record_success(model)
 
                 return response
-            except Exception as e:
+            except Exception:
                 # Record failure
                 if cb:
                     await cb.record_failure(model)
@@ -397,58 +392,3 @@ class LLMRouter:
 
 # Global singleton
 LLM_ROUTER = LLMRouter()
-
-
-# ── Public API wrapper ────────────────────────────────────────────────────────
-# Convenience functions that delegate to the router singleton.
-
-
-async def llm_complete(
-    prompt: str,
-    tier: InferenceTier | None = None,
-    system: str = "",
-    agent_role: str | None = None,
-) -> str:
-    """Complete a prompt using the appropriate LLM tier.
-
-    Args:
-        prompt: The user prompt.
-        tier: Explicit inference tier override.
-        system: Optional system prompt.
-        agent_role: Agent role key for tier inference.
-
-    Returns:
-        The complete response text.
-
-    Raises:
-        RuntimeError: When all models in the fallback chain are unavailable.
-    """
-    result = await LLM_ROUTER.complete(
-        prompt=prompt,
-        tier=tier,
-        system=system,
-        agent_role=agent_role,
-        stream=False,
-    )
-    # complete() returns str when stream=False
-    assert isinstance(result, str), f"expected str, got {type(result)}"
-    return result
-
-
-async def llm_complete_stream(
-    prompt: str,
-    tier: InferenceTier | None = None,
-    system: str = "",
-    agent_role: str | None = None,
-) -> AsyncGenerator[str, None]:
-    """Stream a prompt completion token by token."""
-    result = await LLM_ROUTER.complete(
-        prompt=prompt,
-        tier=tier,
-        system=system,
-        agent_role=agent_role,
-        stream=True,
-    )
-    # The router returns a generator directly when stream=True
-    assert isinstance(result, AsyncGenerator), f"expected AsyncGenerator, got {type(result)}"
-    return result
