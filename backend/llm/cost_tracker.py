@@ -7,7 +7,6 @@ Environment variable overrides allow emergency adjustments.
 
 from __future__ import annotations
 
-import logging
 import os
 import threading
 from collections import deque

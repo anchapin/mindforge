@@ -6,10 +6,9 @@ From SPEC.md Section 3b.5.
 from __future__ import annotations
 
 import logging
+from collections.abc import Iterator
 from datetime import datetime
-from itertools import chain
 from pathlib import Path
-from typing import Iterator
 
 import yaml
 
