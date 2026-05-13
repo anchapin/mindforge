@@ -14,7 +14,6 @@ from dataclasses import dataclass
 from enum import Enum
 
 import httpx
-# ollama imported lazily in _ollama_complete
 
 from backend.exceptions import BudgetExceeded
 
@@ -177,7 +176,7 @@ class LLMRouter:
     This is the main entry point for all LLM calls in MindForge.
     """
 
-    def __init__(self) -> None:
+    def __init__(self):
         self._circuit_breakers: dict[str, CircuitBreaker] = {}
         self._initialized = False
         self._openrouter_client: httpx.AsyncClient | None = None
@@ -243,9 +242,10 @@ class LLMRouter:
         self, cfg: LLMConfig, system: str, prompt: str
     ) -> str:
         """Call local Ollama server."""
-        import ollama  # type: ignore[no-redef]
+        import ollama
+
         try:
-            response = ollama.generate(  # type: ignore[call-args]
+            response = ollama.generate(
                 model=cfg.model,
                 prompt=prompt,
                 system=system if system else None,
@@ -284,7 +284,6 @@ class LLMRouter:
             if cb and not cb.is_available(model):
                 continue  # circuit open, skip
 
-            import ollama  # type: ignore[no-redef]
             try:
                 if stream:
                     return self._openrouter_stream(
@@ -393,54 +392,3 @@ class LLMRouter:
 
 # Global singleton
 LLM_ROUTER = LLMRouter()
-
-
-# ── Public API wrapper ────────────────────────────────────────────────────────
-# Convenience functions that delegate to the router singleton.
-
-
-async def llm_complete(
-    prompt: str,
-    tier: InferenceTier | None = None,
-    system: str = "",
-    agent_role: str | None = None,
-) -> str:
-    """Complete a prompt using the appropriate LLM tier.
-
-    Args:
-        prompt: The user prompt.
-        tier: Explicit inference tier override.
-        system: Optional system prompt.
-        agent_role: Agent role key for tier inference.
-
-    Returns:
-        The complete response text.
-
-    Raises:
-        RuntimeError: When all models in the fallback chain are unavailable.
-    """
-    return await LLM_ROUTER.complete(
-        prompt=prompt,
-        tier=tier,
-        system=system,
-        agent_role=agent_role,
-        stream=False,
-    )  # type: ignore[return-value]
-
-
-async def llm_complete_stream(
-    prompt: str,
-    tier: InferenceTier | None = None,
-    system: str = "",
-    agent_role: str | None = None,
-) -> AsyncGenerator[str, None]:
-    """Stream a prompt completion token by token."""
-    generator = await LLM_ROUTER.complete(
-        prompt=prompt,
-        tier=tier,
-        system=system,
-        agent_role=agent_role,
-        stream=True,
-    )
-    # The router returns a generator directly when stream=True
-    return generator  # type: ignore[return-value]
