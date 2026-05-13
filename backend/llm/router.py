@@ -14,7 +14,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 import httpx
-import ollama
+# ollama imported lazily in _ollama_complete
 
 from backend.exceptions import BudgetExceeded
 
