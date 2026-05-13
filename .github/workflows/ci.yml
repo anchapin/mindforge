@@ -25,6 +25,16 @@ jobs:
       - uses: actions/setup-python@v5
         with: { python-version: "3.12" }
       - run: pip install -e "backend[test]"
+      - name: Create dummy .env for CI
+        run: |
+          cat > .env << 'EOF'
+          OPENROUTER_API_KEY=sk-dummy-key-for-ci-only
+          FERNET_KEY=dummy_fernet_key_for_ci_only_not_real
+          CHROMA_HOST=http://chroma:8000
+          TEMPORAL_HOST=temporal:7233
+          OLLAMA_BASE_URL=http://ollama:11434
+          LOG_LEVEL=INFO
+          EOF
       - run: docker compose --profile test up -d
       - run: sleep 10  # wait for services
       - run: pytest backend/tests/unit -q --tb=short
