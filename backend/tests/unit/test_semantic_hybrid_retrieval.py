@@ -22,11 +22,11 @@ def _make_fake_emb(texts: list[str], dim: int = 768) -> list[list[float]]:
     This ensures vector search returns exact matches first.
     """
     import hashlib
-    results = []
+    results: list[list[float]] = []
     for text in texts:
         # Hash the text content to get a deterministic seed
         seed = int(hashlib.sha256(text.encode()).hexdigest()[:16], 16)
-        vec = [(seed >> (i % 64)) & 1 for i in range(dim)]
+        vec: list[float] = [float((seed >> (i % 64)) & 1) for i in range(dim)]
         # Normalize to unit length
         norm = sum(v * v for v in vec) ** 0.5
         vec = [v / max(norm, 1e-9) for v in vec]
