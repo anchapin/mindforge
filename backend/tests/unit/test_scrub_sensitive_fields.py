@@ -65,8 +65,8 @@ def test_scrub_redacts_sensitive_top_level_keys(key: str) -> None:
     """All top-level sensitive keys must be redacted."""
     payload = {key: "super-secret-value", "safe_field": "ok"}
     result = scrub(payload)
-    assert result[key] == "[REDACTED]"
-    assert result["safe_field"] == "ok"
+    assert result[key] == "[REDACTED]"  # type: ignore[call-overload]
+    assert result["safe_field"] == "ok"  # type: ignore[call-overload]
 
 
 def test_scrub_redacts_nested_sensitive_fields() -> None:
@@ -76,9 +76,9 @@ def test_scrub_redacts_nested_sensitive_fields() -> None:
         "nested": {"access_token": "also-secret", "safe_field": "ok"},
     }
     result = scrub(payload)
-    assert result["task_id"] == "123"
-    assert result["nested"]["access_token"] == "[REDACTED]"
-    assert result["nested"]["safe_field"] == "ok"
+    assert result["task_id"] == "123"  # type: ignore[call-overload]
+    assert result["nested"]["access_token"] == "[REDACTED]"  # type: ignore[call-overload]
+    assert result["nested"]["safe_field"] == "ok"  # type: ignore[call-overload]
 
 
 def test_scrub_redacts_in_lists() -> None:
@@ -90,19 +90,19 @@ def test_scrub_redacts_in_lists() -> None:
         ]
     }
     result = scrub(payload)
-    assert result["list"][0]["password"] == "[REDACTED]"
-    assert result["list"][0]["role"] == "admin"
-    assert result["list"][1]["api_key"] == "[REDACTED]"
-    assert result["list"][1]["name"] == "ok"
+    assert result["list"][0]["password"] == "[REDACTED]"  # type: ignore[call-overload]
+    assert result["list"][0]["role"] == "admin"  # type: ignore[call-overload]
+    assert result["list"][1]["api_key"] == "[REDACTED]"  # type: ignore[call-overload]
+    assert result["list"][1]["name"] == "ok"  # type: ignore[call-overload]
 
 
 def test_scrub_does_not_redact_task_id() -> None:
     """task_id must NOT be redacted."""
     payload = {"task_id": "123", "description": "Some task", "status": "running"}
     result = scrub(payload)
-    assert result["task_id"] == "123"
-    assert result["description"] == "Some task"
-    assert result["status"] == "running"
+    assert result["task_id"] == "123"  # type: ignore[call-overload]
+    assert result["description"] == "Some task"  # type: ignore[call-overload]
+    assert result["status"] == "running"  # type: ignore[call-overload]
 
 
 def test_scrub_does_not_redact_description() -> None:
@@ -113,8 +113,8 @@ def test_scrub_does_not_redact_description() -> None:
         "auth_token_enc": "secret",
     }
     result = scrub(payload)
-    assert result["description"] == "Draft an email to the customer"
-    assert result["auth_token_enc"] == "[REDACTED]"
+    assert result["description"] == "Draft an email to the customer"  # type: ignore[call-overload]
+    assert result["auth_token_enc"] == "[REDACTED]"  # type: ignore[call-overload]
 
 
 def test_scrub_does_not_redact_status() -> None:
@@ -125,8 +125,8 @@ def test_scrub_does_not_redact_status() -> None:
         "auth_token_enc": "secret",
     }
     result = scrub(payload)
-    assert result["status"] == "completed"
-    assert result["auth_token_enc"] == "[REDACTED]"
+    assert result["status"] == "completed"  # type: ignore[call-overload]
+    assert result["auth_token_enc"] == "[REDACTED]"  # type: ignore[call-overload]
 
 
 def test_scrub_case_insensitive_keys() -> None:
@@ -137,9 +137,9 @@ def test_scrub_case_insensitive_keys() -> None:
         "PASSWORD": "secret3",
     }
     result = scrub(payload)
-    assert result["AUTH_TOKEN_ENC"] == "[REDACTED]"
-    assert result["Access_Token"] == "[REDACTED]"
-    assert result["PASSWORD"] == "[REDACTED]"
+    assert result["AUTH_TOKEN_ENC"] == "[REDACTED]"  # type: ignore[call-overload]
+    assert result["Access_Token"] == "[REDACTED]"  # type: ignore[call-overload]
+    assert result["PASSWORD"] == "[REDACTED]"  # type: ignore[call-overload]
 
 
 def test_scrub_preserves_non_sensitive_fields() -> None:
@@ -168,8 +168,8 @@ def test_scrub_deeply_nested() -> None:
         }
     }
     result = scrub(payload)
-    assert result["level1"]["level2"]["level3"]["api_key"] == "[REDACTED]"
-    assert result["level1"]["level2"]["level3"]["task_id"] == "deep_task"
+    assert result["level1"]["level2"]["level3"]["api_key"] == "[REDACTED]"  # type: ignore[call-overload]
+    assert result["level1"]["level2"]["level3"]["task_id"] == "deep_task"  # type: ignore[call-overload]
 
 
 def test_scrub_empty_dict() -> None:

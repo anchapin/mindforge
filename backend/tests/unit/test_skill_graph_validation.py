@@ -19,6 +19,8 @@ Skill YAML format (SPEC.md Section 2.3):
         condition: node_1.approved
 """
 
+import collections.abc
+
 import pytest
 import yaml
 
@@ -113,13 +115,13 @@ def validate_skill_graph(skill_data: dict) -> None:
             self.on_stack: set[str] = set()
 
         def has_cycle_from(self, start: str, visited: set[str]) -> bool:
-            stack: list[tuple[str, iter]] = [(start, iter([
+            stack: list[tuple[str, collections.abc.Iterator[str]]] = [(start, iter([
                 e.get("to", "") for e in raw_edges if e.get("from") == start
             ]))]
             while stack:
                 node_id, neighbors_iter = stack[-1]
                 try:
-                    neighbor = next(neighbors_iter)
+                    neighbor: str = next(neighbors_iter)
                 except StopIteration:
                     stack.pop()
                     self.on_stack.discard(node_id)
@@ -153,8 +155,6 @@ def validate_skill_graph(skill_data: dict) -> None:
             raise MissingNodeError(error)
         if "Approval node" in error and "no outgoing edges" in error:
             raise ApprovalGateWithNoNext(error)
-
-    return errors
 
 
 # ---------------------------------------------------------------------------
