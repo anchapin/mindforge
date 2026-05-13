@@ -51,8 +51,8 @@ class WSConnectionManager:
     """
 
     def __init__(self):
-        self._connections: dict[str, WebSocket] = {}
-        self._global_connections: list[WebSocket] = []
+        self._connections: dict[str, WebSocket] = {}  # type: ignore[assignment]
+        self._global_connections: list[WebSocket] = []  # type: ignore[assignment]
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket, task_id: str | None = None) -> None:
@@ -74,7 +74,7 @@ class WSConnectionManager:
         message = _scrub(message)  # type: ignore[assignment]
         payload = json.dumps(message)
         async with self._lock:
-            ws = self._connections.get(task_id)
+            ws: WebSocket | None = self._connections.get(task_id)  # type: ignore[assignment,annotation-unchecked]
         if ws:
             try:
                 await ws.send_text(payload)
@@ -86,7 +86,7 @@ class WSConnectionManager:
         message = _scrub(message)  # type: ignore[assignment]
         payload = json.dumps(message)
         async with self._lock:
-            listeners = list(self._global_connections)
+            listeners: list[WebSocket] = list(self._global_connections)  # type: ignore[assignment,annotation-unchecked]
         for ws in listeners:
             try:
                 await ws.send_text(payload)

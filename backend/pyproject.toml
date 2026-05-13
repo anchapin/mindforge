@@ -11,7 +11,7 @@ dependencies = [
     "fastapi>=0.115.0",
     "uvicorn[standard]>=0.34.0",
     "pydantic>=2.10.0",
-    "pydantic_yaml>=1.6.0,<2.0.0",
+    "pydantic_yaml>=1.6.0",
     "python-multipart>=0.0.10",
     "orjson>=3.10.0",
     "langgraph>=0.2.0",
@@ -66,8 +66,8 @@ build-backend = "hatchling.build"
 packages = ["agents", "api", "db", "llm", "memory", "scheduler", "skills", "tools"]
 
 [tool.ruff]
-line-length = 100
 target-version = "py312"
+line-length = 100
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
@@ -82,6 +82,7 @@ python_version = "3.12"
 warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true
+disable_error_code = ["override"]
 
 [[tool.mypy.overrides]]
 files = ["backend/tests/unit/test_scrub_sensitive_fields.py"]

@@ -24,7 +24,7 @@ def _decode_header_value(value: str) -> str:
     return " ".join(decoded)
 
 
-class EmailFetchTool(BaseTool):
+class EmailFetchTool(BaseTool):  # type: ignore[override]
     name = "email_fetch"
     description = "Fetch emails from IMAP inbox (read-only)"
     required_integrations = ["email"]

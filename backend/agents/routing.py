@@ -11,10 +11,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
-from typing import cast
 
-from ..llm.router import LLM_ROUTER, InferenceTier
-from ..memory.store import classify_task_type  # noqa: F401 - re-exported for supervisor
+from ..llm.router import InferenceTier, llm_complete
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +55,6 @@ AGENT_ROLES: dict[str, str] = {
 # Agent routing
 # ---------------------------------------------------------------------------------------
 
-
 @dataclass
 class RouteResult:
     agent_role: str
@@ -72,14 +69,14 @@ def route_to_agent(task_description: str, task_type: str) -> RouteResult:
     Falls back to COO for ambiguous cases.
     """
     ROLE_MAP: dict[str, str] = {
-        "github": "engineer",
-        "engineering": "engineer",
-        "email": "cmo",
-        "content": "cmo",
-        "research": "researcher",
-        "finance": "coo",
-        "operations": "coo",
-        "general": "coo",
+        "github":       "engineer",
+        "engineering":  "engineer",
+        "email":        "cmo",
+        "content":      "cmo",
+        "research":     "researcher",
+        "finance":      "coo",
+        "operations":   "coo",
+        "general":      "coo",
     }
 
     agent_role = ROLE_MAP.get(task_type, "coo")
@@ -97,24 +94,12 @@ def route_to_agent(task_description: str, task_type: str) -> RouteResult:
 # ---------------------------------------------------------------------------------------
 
 SKILL_INTENTS = [
-    "email_draft",
-    "email_reply",
-    "email_summary",
-    "github_activity",
-    "github_issue",
-    "github_pr_review",
-    "refund_negotiation",
-    "billing_inquiry",
-    "invoice_review",
-    "content_post",
-    "content_edit",
-    "content_strategy",
-    "research_summary",
-    "research_comparison",
-    "research_alert",
-    "calendar_schedule",
-    "calendar_conflict",
-    "meeting_prep",
+    "email_draft", "email_reply", "email_summary",
+    "github_activity", "github_issue", "github_pr_review",
+    "refund_negotiation", "billing_inquiry", "invoice_review",
+    "content_post", "content_edit", "content_strategy",
+    "research_summary", "research_comparison", "research_alert",
+    "calendar_schedule", "calendar_conflict", "meeting_prep",
     "general",
 ]
 
@@ -137,13 +122,10 @@ async def classify_intent(query: str) -> str:
         query=query,
     )
     try:
-        result = cast(
-            str,
-            await LLM_ROUTER.complete(
-                rendered,
-                tier=InferenceTier.CLOUD_FAST,
-                system="Output only the intent label, nothing else.",
-            ),
+        result = await llm_complete(
+            rendered,
+            tier=InferenceTier.CLOUD_FAST,
+            system="Output only the intent label, nothing else.",
         )
         label = result.strip().lower()
         if label in SKILL_INTENTS:

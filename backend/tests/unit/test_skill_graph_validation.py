@@ -19,9 +19,10 @@ Skill YAML format (SPEC.md Section 2.3):
         condition: node_1.approved
 """
 
+import collections.abc
+
 import pytest
 import yaml
-from collections.abc import Iterator
 
 # ---------------------------------------------------------------------------
 # Reference validate_skill_graph implementation (mirrors SPEC.md Section 2.3)
@@ -114,7 +115,7 @@ def validate_skill_graph(skill_data: dict) -> None:
             self.on_stack: set[str] = set()
 
         def has_cycle_from(self, start: str, visited: set[str]) -> bool:
-            stack: list[tuple[str, Iterator[str]]] = [(start, iter([
+            stack: list[tuple[str, collections.abc.Iterator[str]]] = [(start, iter([
                 e.get("to", "") for e in raw_edges if e.get("from") == start
             ]))]
             while stack:
@@ -140,7 +141,7 @@ def validate_skill_graph(skill_data: dict) -> None:
         checker = CycleChecker()
         visited: set[str] = set()
         for node_id in {n["id"] for n in raw_nodes}:
-            if node_id not in visited:  # noqa: SIM102
+            if node_id not in visited:
                 if checker.has_cycle_from(node_id, visited):
                     errors.append(f"Cycle detected: {node_id} -> ...")
 

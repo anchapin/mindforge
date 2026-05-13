@@ -54,6 +54,6 @@ def register_all_tools() -> None:
 
     for tool_cls in [GitHubTool, StripeTool, EmailFetchTool]:
         try:
-            ToolRegistry.register(tool_cls())  # type: ignore
+            ToolRegistry.register(tool_cls())  # type: ignore[abstract]
         except Exception as exc:
             logger.warning("Failed to auto-register %s: %s", tool_cls.__name__, exc)

@@ -6,14 +6,13 @@ See SPEC.md Section 5.6.2 for the full test stack documentation.
 
 import asyncio
 from pathlib import Path
-from typing import Generator
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 
 @pytest.fixture(scope="session")
-def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+def event_loop():
     """One event loop per test session for async tests."""
     loop = asyncio.new_event_loop()
     yield loop
@@ -21,7 +20,7 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 
 
 @pytest.fixture
-def pglite_test_db(tmp_path: Path) -> MagicMock:  # type: ignore[misc]
+def pglite_test_db(tmp_path: Path) -> MagicMock:  # type: ignore[misc,return-value]
     """Isolated PGLite DB for each test.
 
     Creates a temporary SQLite database and initializes the schema.

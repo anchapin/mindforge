@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 INTEGRATION_RATE_LIMITS = {"github": 5}
 
 
-class GitHubTool(BaseTool):
+class GitHubTool(BaseTool):  # type: ignore[override]
     name = "github_api"
     description = "Fetch GitHub commits, issues, PRs for a repository"
     required_integrations = ["github"]
