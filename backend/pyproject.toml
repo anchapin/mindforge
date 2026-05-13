@@ -2,7 +2,6 @@
 name = "mindforge"
 version = "0.1.0-alpha"
 description = "Self-hosted multi-agent AI operating system"
-readme = "../README.md"
 requires-python = ">=3.12"
 license = {text = "AGPL-3.0"}
 authors = [
