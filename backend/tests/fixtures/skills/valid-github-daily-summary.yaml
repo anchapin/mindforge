@@ -1,0 +1,73 @@
+version: "1"
+name: github-daily-summary
+description: >
+  Fetch GitHub commit activity from the last 24 hours and produce a
+  PM-style summary organized by repository and author.
+category: developer_tools
+trigger:
+  type: keyword
+  keywords:
+    - github
+    - commits
+    - summary
+    - pr
+    - pull request
+
+execution_graph:
+  type: directed_acyclic_graph
+  nodes:
+    - id: fetch_commits
+      agent: engineer
+      goal: >
+        Fetch all commits pushed to the authenticated user's repositories
+        in the last 24 hours using the GitHub REST API.
+      tools:
+        - github_api
+      outcome_on_failure: skip_to_end
+      retry:
+        max_attempts: 2
+        backoff_seconds: 30
+      memory_layers:
+        - semantic
+        - episodic
+
+    - id: analyze
+      agent: engineer
+      goal: >
+        Analyze the fetched commits and group them by repository and author.
+        Identify patterns: which files were changed most, any breaking changes,
+        and summarize the overall activity level.
+      tools: []
+      memory_layers:
+        - semantic
+
+    - id: draft_summary
+      agent: engineer
+      goal: >
+        Draft a clear, concise summary of the commit activity suitable for
+        a product manager or team lead. Format as bullet points by repository.
+      tools: []
+      memory_layers:
+        - style
+      output_schema:
+        type: object
+        fields:
+          - summary_text
+          - repositories_affected
+          - total_commits
+          - notable_changes
+
+  edges:
+    - from: fetch_commits
+      to: analyze
+      condition: fetch_commits.success
+    - from: fetch_commits
+      to: draft_summary
+      condition: fetch_commits.completed_no_changes
+    - from: analyze
+      to: draft_summary
+      condition: analyze.success
+
+memory_layers:
+  - semantic
+  - episodic

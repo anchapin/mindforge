@@ -1,0 +1,114 @@
+# MindForge — self-hosted AI agent platform
+# Usage:
+#   docker compose up -d                    # production
+#   docker compose --profile dev up -d      # + frontend dev (Vite HMR)
+#   docker compose --profile test up -d    # integration test environment
+
+services:
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile.backend
+    profiles: [dev, prod, test]
+    restart: unless-stopped
+    volumes:
+      - backend_data:/app/data
+      - ./logs/backend:/app/logs
+    environment:
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - FERNET_KEY=${FERNET_KEY}
+      - CHROMA_HOST=http://chroma:8000
+      - TEMPORAL_HOST=temporal:7233
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - LOG_LEVEL=${LOG_LEVEL:-INFO}
+    env_file: [.env, .env.local]
+    depends_on:
+      chroma:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
+    networks:
+      - mindforge
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8000/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 30s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend
+    profiles: [prod]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - mindforge
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:3000/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  frontend_dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.frontend.dev
+    profiles: [dev]
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:5173:5173"
+    depends_on:
+      - backend
+    networks:
+      - mindforge
+
+  chroma:
+    image: chromadb/chroma:0.6.3
+    profiles: [dev, prod, test]
+    restart: unless-stopped
+    volumes:
+      - chroma_data:/chroma/chroma
+    networks:
+      - mindforge
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://127.0.0.1:8000/api/v1/heartbeat').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    read_only: false
+    tmpfs:
+      - /tmp
+
+  ollama:
+    image: ollama/ollama:latest
+    profiles: [dev, prod]
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - mindforge
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:11434/api/tags || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+networks:
+  mindforge:
+    driver: bridge
+
+volumes:
+  backend_data:
+  chroma_data:
+  ollama_data:

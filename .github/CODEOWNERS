@@ -1,0 +1,13 @@
+# .github/CODEOWNERS
+
+# Default owner
+*   @alex
+
+# Phase-specific ownership
+/backend/agents/      @alex
+/backend/memory/     @alex
+/backend/skills/     @alex
+/backend/tools/      @alex
+/backend/scheduler/   @alex
+/frontend/           @alex
+/.github/            @alex

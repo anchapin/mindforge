@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+ENV/
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Node
+node_modules/
+.npm
+*.log
+.DS_Store
+
+# Docker
+.docker/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+*.cover
+
+# MyPy
+.mypy_cache/
+.dmypy.json
+
+# Temporal
+temporal_data/

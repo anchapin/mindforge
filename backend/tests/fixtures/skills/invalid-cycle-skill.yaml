@@ -1,0 +1,41 @@
+version: "1"
+name: invalid-cycle-skill
+description: >
+  A skill with a deliberate cycle in its execution graph for negative testing.
+category: testing
+trigger:
+  type: keyword
+  keywords:
+    - cycle
+    - test
+
+execution_graph:
+  type: directed_acyclic_graph
+  nodes:
+    - id: node_a
+      agent: coo
+      goal: First node in the cycle
+      tools: []
+
+    - id: node_b
+      agent: cmo
+      goal: Second node in the cycle
+      tools: []
+
+    - id: node_c
+      agent: researcher
+      goal: Third node — completes the cycle back to node_a
+      tools: []
+
+  edges:
+    - from: node_a
+      to: node_b
+      condition: node_a.done
+    - from: node_b
+      to: node_c
+      condition: node_b.done
+    - from: node_c
+      to: node_a
+      condition: node_c.done
+
+memory_layers: []

@@ -1,0 +1,84 @@
+[project]
+name = "mindforge"
+version = "0.1.0-alpha"
+description = "Self-hosted multi-agent AI operating system"
+readme = "../README.md"
+requires-python = ">=3.12"
+license = {text = "AGPL-3.0"}
+authors = [
+    {name = "Alex", email = "alex@example.com"},
+]
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn[standard]>=0.34.0",
+    "pydantic>=2.10.0",
+    "pydantic_yaml>=1.8.0",
+    "python-multipart>=0.0.10",
+    "orjson>=3.10.0",
+    "langgraph>=0.2.0",
+    "langchain-openai>=0.3.0",
+    "langchain-anthropic>=0.3.0",
+    "langchain-core>=0.3.0",
+    "httpx>=0.28.0",
+    "aiohttp>=3.11.0",
+    "temporalio>=1.0.0",
+    "pglite>=0.2.0",
+    "chromadb>=0.5.0",
+    "psycopg2-binary>=2.9.0",
+    "alembic>=1.14.0",
+    "cryptography>=44.0.0",
+    "passlib[bcrypt]>=1.7.0",
+    "structlog>=24.0.0",
+    "opentelemetry-api>=1.27.0",
+    "opentelemetry-sdk>=1.27.0",
+    "opentelemetry-exporter-otlp>=1.27.0",
+    "psutil>=6.0.0",
+    "tenacity>=9.0.0",
+    "rank_bm25>=0.2.0",
+    "sentence-transformers>=3.0.0",
+    "numpy>=2.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.9.0",
+    "mypy>=1.14.0",
+    "pre-commit>=4.0.0",
+]
+test = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.25.0",
+    "pytest-mock>=3.0.0",
+    "pytest-cov>=4.0.0",
+    "dirty-equals>=0.7.0",
+    "hypothesis>=6.0.0",
+    "respx>=0.22.0",
+    "freezegun>=1.5.0",
+]
+all = [
+    "mindforge[dev,test]",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.12"
+warn_return_any = true
+warn_unused_ignores = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["backend/tests"]
