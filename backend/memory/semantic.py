@@ -19,7 +19,10 @@ import os
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from rank_bm25 import BM25Okapi
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
@@ -223,7 +226,7 @@ class SemanticMemory:
         Entries with failed HMAC verification are excluded.
         """
         # Embed query
-        query_embs = embed_texts([query])
+        query_embs = await embed_texts([query])
         if not query_embs:
             return []
         query_emb = query_embs[0]

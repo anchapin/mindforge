@@ -7,14 +7,15 @@ Environment variable overrides allow emergency adjustments.
 
 from __future__ import annotations
 
-import logging
 import os
 import threading
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-logger = logging.getLogger(__name__)
+import structlog
+
+logger = structlog.get_logger(__name__)
 
 
 # ── Default Limits ────────────────────────────────────────────────────────────

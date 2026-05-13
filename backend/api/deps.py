@@ -49,3 +49,13 @@ async def get_db_context() -> AsyncIterator[sqlite3.Connection]:
 
 def get_ws_manager() -> WSConnectionManager:
     return ws_manager
+
+
+def db_dep() -> sqlite3.Connection:
+    """Sync db dependency for routes that don't need async."""
+    return get_db()
+
+
+async def memory_dep() -> SharedMemoryStore:
+    """Async memory store dependency."""
+    return get_memory_store()

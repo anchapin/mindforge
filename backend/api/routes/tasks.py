@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from ...agents.supervisor import SupervisorRunner
 from ...memory.episodic import EpisodicMemory
 from ...memory.store import SharedMemoryStore
-from ..deps import db_dep, get_ws_manager, memory_dep
+from ..deps import DB_PATH, db_dep, get_ws_manager, memory_dep
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
