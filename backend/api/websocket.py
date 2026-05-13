@@ -71,7 +71,7 @@ class WSConnectionManager:
                 self._global_connections.remove(websocket)
 
     async def send(self, task_id: str, message: dict) -> None:
-        message = _scrub(message)
+        message = _scrub(message)  # type: ignore[assignment]
         payload = json.dumps(message)
         async with self._lock:
             ws: WebSocket | None = self._connections.get(task_id)  # type: ignore[assignment,annotation-unchecked]
@@ -83,7 +83,7 @@ class WSConnectionManager:
                 await self.disconnect(ws, task_id)
 
     async def broadcast(self, message: dict) -> None:
-        message = _scrub(message)
+        message = _scrub(message)  # type: ignore[assignment]
         payload = json.dumps(message)
         async with self._lock:
             listeners: list[WebSocket] = list(self._global_connections)  # type: ignore[assignment,annotation-unchecked]

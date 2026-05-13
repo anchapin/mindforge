@@ -177,7 +177,7 @@ class LLMRouter:
     This is the main entry point for all LLM calls in MindForge.
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._circuit_breakers: dict[str, CircuitBreaker] = {}
         self._initialized = False
         self._openrouter_client: httpx.AsyncClient | None = None

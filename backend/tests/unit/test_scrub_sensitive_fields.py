@@ -10,6 +10,8 @@ Sensitive keys (case-insensitive match):
   - token, authorization, cookie, session
 """
 
+from typing import Any, overload
+
 import pytest
 
 # SENSITIVE_KEYS from SPEC.md Section 3b.6
@@ -28,6 +30,12 @@ SENSITIVE_KEYS: set[str] = {
 }
 
 
+@overload
+def scrub(obj: dict) -> dict: ...
+@overload
+def scrub(obj: list) -> list: ...
+@overload
+def scrub(obj: dict | list) -> dict | list: ...
 def scrub(obj: dict | list) -> dict | list:
     """Recursively redact sensitive fields in a dict or list.
 
@@ -35,14 +43,24 @@ def scrub(obj: dict | list) -> dict | list:
     """
     if isinstance(obj, dict):
         return {
-            k: "[REDACTED]" if k.lower() in SENSITIVE_KEYS else scrub(v)
-            if isinstance(v, (dict, list))
-            else v
+            k: "[REDACTED]" if k.lower() in SENSITIVE_KEYS else _scrub_value(v)
             for k, v in obj.items()
         }
     elif isinstance(obj, list):
-        return [scrub(i) for i in obj]
+        return [_scrub_value(i) for i in obj]
     return obj
+
+
+def _scrub_value(v: Any) -> Any:
+    """Scrub a single non-primitive value (dict or list)."""
+    if isinstance(v, dict):
+        return {
+            k: "[REDACTED]" if k.lower() in SENSITIVE_KEYS else _scrub_value(vv)
+            for k, vv in v.items()
+        }
+    elif isinstance(v, list):
+        return [_scrub_value(i) for i in v]
+    return v
 
 
 @pytest.mark.parametrize(
@@ -65,44 +83,44 @@ def test_scrub_redacts_sensitive_top_level_keys(key: str) -> None:
     """All top-level sensitive keys must be redacted."""
     payload = {key: "super-secret-value", "safe_field": "ok"}
     result = scrub(payload)
-    assert result[key] == "[REDACTED]"  # noqa: call-overload
-    assert result["safe_field"] == "ok"  # noqa: call-overload
+    assert result[key] == "[REDACTED]"
+    assert result["safe_field"] == "ok"
 
 
 def test_scrub_redacts_nested_sensitive_fields() -> None:
     """Sensitive fields nested inside dicts must be redacted."""
     payload = {
         "task_id": "123",
-        "nested": {"access_token": "also-secret", "safe_field": "ok"},
+        "nested": {"access_token": "***", "safe_field": "ok"},
     }
     result = scrub(payload)
-    assert result["task_id"] == "123"  # noqa: call-overload
-    assert result["nested"]["access_token"] == "[REDACTED]"  # noqa: call-overload
-    assert result["nested"]["safe_field"] == "ok"  # noqa: call-overload
+    assert result["task_id"] == "123"
+    assert result["nested"]["access_token"] == "[REDACTED]"
+    assert result["nested"]["safe_field"] == "ok"
 
 
 def test_scrub_redacts_in_lists() -> None:
     """Sensitive fields inside list items must be redacted."""
     payload = {
         "list": [
-            {"password": "bad", "role": "admin"},
-            {"api_key": "worse", "name": "ok"},
+            {"password": "***", "role": "admin"},
+            {"api_key": "***", "name": "ok"},
         ]
     }
     result = scrub(payload)
-    assert result["list"][0]["password"] == "[REDACTED]"  # noqa: call-overload
-    assert result["list"][0]["role"] == "admin"  # noqa: call-overload
-    assert result["list"][1]["api_key"] == "[REDACTED]"  # noqa: call-overload
-    assert result["list"][1]["name"] == "ok"  # noqa: call-overload
+    assert result["list"][0]["password"] == "[REDACTED]"
+    assert result["list"][0]["role"] == "admin"
+    assert result["list"][1]["api_key"] == "[REDACTED]"
+    assert result["list"][1]["name"] == "ok"
 
 
 def test_scrub_does_not_redact_task_id() -> None:
     """task_id must NOT be redacted."""
     payload = {"task_id": "123", "description": "Some task", "status": "running"}
     result = scrub(payload)
-    assert result["task_id"] == "123"  # noqa: call-overload
-    assert result["description"] == "Some task"  # noqa: call-overload
-    assert result["status"] == "running"  # noqa: call-overload
+    assert result["task_id"] == "123"
+    assert result["description"] == "Some task"
+    assert result["status"] == "running"
 
 
 def test_scrub_does_not_redact_description() -> None:
@@ -113,8 +131,8 @@ def test_scrub_does_not_redact_description() -> None:
         "auth_token_enc": "secret",
     }
     result = scrub(payload)
-    assert result["description"] == "Draft an email to the customer"  # noqa: call-overload
-    assert result["auth_token_enc"] == "[REDACTED]"  # noqa: call-overload
+    assert result["description"] == "Draft an email to the customer"
+    assert result["auth_token_enc"] == "[REDACTED]"
 
 
 def test_scrub_does_not_redact_status() -> None:
@@ -125,21 +143,21 @@ def test_scrub_does_not_redact_status() -> None:
         "auth_token_enc": "secret",
     }
     result = scrub(payload)
-    assert result["status"] == "completed"  # noqa: call-overload
-    assert result["auth_token_enc"] == "[REDACTED]"  # noqa: call-overload
+    assert result["status"] == "completed"
+    assert result["auth_token_enc"] == "[REDACTED]"
 
 
 def test_scrub_case_insensitive_keys() -> None:
     """Sensitive key matching is case-insensitive."""
     payload = {
         "AUTH_TOKEN_ENC": "secret1",
-        "Access_Token": "secret2",
-        "PASSWORD": "secret3",
+        "Access_Token": "***",
+        "PASSWORD": "***",
     }
     result = scrub(payload)
-    assert result["AUTH_TOKEN_ENC"] == "[REDACTED]"  # noqa: call-overload
-    assert result["Access_Token"] == "[REDACTED]"  # noqa: call-overload
-    assert result["PASSWORD"] == "[REDACTED]"  # noqa: call-overload
+    assert result["AUTH_TOKEN_ENC"] == "[REDACTED]"
+    assert result["Access_Token"] == "[REDACTED]"
+    assert result["PASSWORD"] == "[REDACTED]"
 
 
 def test_scrub_preserves_non_sensitive_fields() -> None:
@@ -161,15 +179,15 @@ def test_scrub_deeply_nested() -> None:
         "level1": {
             "level2": {
                 "level3": {
-                    "api_key": "nested-secret",
+                    "api_key": "***",
                     "task_id": "deep_task",
                 }
             }
         }
     }
     result = scrub(payload)
-    assert result["level1"]["level2"]["level3"]["api_key"] == "[REDACTED]"  # noqa: call-overload
-    assert result["level1"]["level2"]["level3"]["task_id"] == "deep_task"  # noqa: call-overload
+    assert result["level1"]["level2"]["level3"]["api_key"] == "[REDACTED]"
+    assert result["level1"]["level2"]["level3"]["task_id"] == "deep_task"
 
 
 def test_scrub_empty_dict() -> None:
@@ -180,3 +198,18 @@ def test_scrub_empty_dict() -> None:
 def test_scrub_empty_list() -> None:
     """Scrub handles empty lists."""
     assert scrub([]) == []
+
+
+def test_scrub_nested_list_of_dicts() -> None:
+    """Scrub handles nested lists containing dicts."""
+    payload = {
+        "users": [
+            {"name": "Alice", "api_key": "key1"},
+            {"name": "Bob", "api_key": "key2"},
+        ]
+    }
+    result = scrub(payload)
+    assert result["users"][0]["name"] == "Alice"
+    assert result["users"][0]["api_key"] == "[REDACTED]"
+    assert result["users"][1]["name"] == "Bob"
+    assert result["users"][1]["api_key"] == "[REDACTED]"
