@@ -243,6 +243,7 @@ class LLMRouter:
         self, cfg: LLMConfig, system: str, prompt: str
     ) -> str:
         """Call local Ollama server."""
+        import ollama  # type: ignore[no-redef]
         try:
             opts = {"num_predict": cfg.max_tokens, "temperature": cfg.temperature}
             if system:
