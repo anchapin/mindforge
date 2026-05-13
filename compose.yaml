@@ -10,7 +10,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    profiles: [dev, prod]
+    profiles: [dev, prod, test]
     restart: unless-stopped
     volumes:
       - backend_data:/app/data
@@ -89,7 +89,7 @@ services:
 
   ollama:
     image: ollama/ollama:latest
-    profiles: [dev, prod]
+    profiles: [dev, prod, test]
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
