@@ -21,11 +21,11 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-import chromadb
-from chromadb.config import Settings as ChromaSettings
-
 if TYPE_CHECKING:
     from rank_bm25 import BM25Okapi
+
+import chromadb
+from chromadb.config import Settings as ChromaSettings
 
 from .embeddings import ChunkConfig, chunk_text, embed_texts
 
@@ -225,11 +225,6 @@ class SemanticMemory:
         Returns records sorted by cosine similarity (descending).
         Entries with failed HMAC verification are excluded.
         """
-        try:
-            import numpy as np  # noqa: F401
-        except ImportError:
-            pass  # type: ignore[no-redef]
-
         # Embed query
         query_embs = embed_texts([query])
         if not query_embs:
@@ -286,7 +281,7 @@ class SemanticMemory:
     def build_bm25_index(self, project_id: str | None = None) -> None:
         """Rebuild BM25 index from all records. Call after writes."""
         try:
-            from rank_bm25 import BM25Okapi
+            from rank_bm25 import BM25Okapi  # noqa: F401
         except ImportError:
             logger.warning("rank_bm25 not installed — hybrid search falls back to vector only")
             return

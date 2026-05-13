@@ -49,3 +49,26 @@ async def get_db_context() -> AsyncIterator[sqlite3.Connection]:
 
 def get_ws_manager() -> WSConnectionManager:
     return ws_manager
+
+
+# ---------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------
+# FastAPI route dependencies
+# ---------------------------------------------------------------------------------------
+
+
+async def db_dep() -> AsyncIterator[sqlite3.Connection]:
+    """FastAPI dependency that provides a SQLite database connection.
+
+    Yields a connection from get_db() and closes it when done.
+    """
+    conn = get_db()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+async def memory_dep() -> SharedMemoryStore:
+    """FastAPI dependency that provides the shared memory store singleton."""
+    return get_memory_store()

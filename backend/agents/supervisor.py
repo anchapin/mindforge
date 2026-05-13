@@ -11,13 +11,13 @@ import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, StateGraph
 from sqlalchemy import create_engine
 
-from ..llm.router import InferenceTier, llm_complete
+from ..llm.router import LLM_ROUTER, InferenceTier
 from ..memory.store import SharedMemoryStore
 from .routing import AGENT_ROLES, classify_task_type, route_to_agent
 
@@ -27,9 +27,11 @@ logger = logging.getLogger(__name__)
 # Supervisor state
 # ---------------------------------------------------------------------------------------
 
+
 @dataclass
 class AgentState:
     """LangGraph state for the supervisor workflow."""
+
     current_task: str = ""
     task_id: str = ""
     agent_role: str = "coo"
@@ -43,6 +45,7 @@ class AgentState:
     def model_copy(self, update: dict[str, Any]) -> AgentState:
         """Shallow copy with field updates (compatible with Pydantic-like usage)."""
         import copy
+
         new_state = copy.copy(self)
         for k, v in update.items():
             setattr(new_state, k, v)
@@ -52,6 +55,7 @@ class AgentState:
 # ---------------------------------------------------------------------------------------
 # Supervisor node functions
 # ---------------------------------------------------------------------------------------
+
 
 def supervisor_node(state: AgentState) -> AgentState:
     """Router node - decides which specialist agent handles the task.
@@ -63,17 +67,22 @@ def supervisor_node(state: AgentState) -> AgentState:
 
     logger.info(
         "Supervisor routing: task_id=%s task_type=%s -> %s (confidence=%.2f)",
-        state.task_id, task_type, route.agent_role, route.confidence,
+        state.task_id,
+        task_type,
+        route.agent_role,
+        route.confidence,
     )
 
-    return state.model_copy(update={
-        "agent_role": route.agent_role,
-        "context": {
-            **state.context,
-            "task_type": task_type,
-            "routing_confidence": route.confidence,
-        },
-    })
+    return state.model_copy(
+        update={
+            "agent_role": route.agent_role,
+            "context": {
+                **state.context,
+                "task_type": task_type,
+                "routing_confidence": route.confidence,
+            },
+        }
+    )
 
 
 async def specialist_node(
@@ -91,38 +100,51 @@ async def specialist_node(
     )
 
     system_msg = (
-        role_prompt + "\n\n" +
-        memory_context + "\n\n" +
-        "## Current Task\n" + state.current_task + "\n\n" +
-        "## Output Format\n" +
-        "Return your response as a JSON object with fields: summary, result, next_steps.\n" +
-        "Do not include any fields not listed above."
+        role_prompt
+        + "\n\n"
+        + memory_context
+        + "\n\n"
+        + "## Current Task\n"
+        + state.current_task
+        + "\n\n"
+        + "## Output Format\n"
+        + "Return your response as a JSON object with fields: summary, result, next_steps.\n"
+        + "Do not include any fields not listed above."
     )
 
     try:
-        response = await llm_complete(
-            system_msg,
-            tier=InferenceTier.CLOUD_HEAVY,
+        response = cast(
+            str,
+            await LLM_ROUTER.complete(
+                system_msg,
+                tier=InferenceTier.CLOUD_HEAVY,
+            ),
         )
 
         result_data = json.loads(response)
         logger.info(
             "Specialist completed: task_id=%s agent=%s",
-            state.task_id, state.agent_role,
+            state.task_id,
+            state.agent_role,
         )
 
-        return state.model_copy(update={
-            "memory_context": memory_context,
-            "result": result_data,
-            "messages": state.messages + [
-                {"role": state.agent_role, "content": result_data.get("result", "")},
-            ],
-        })
+        return state.model_copy(
+            update={
+                "memory_context": memory_context,
+                "result": result_data,
+                "messages": state.messages
+                + [
+                    {"role": state.agent_role, "content": result_data.get("result", "")},
+                ],
+            }
+        )
     except json.JSONDecodeError as exc:
         logger.error("Specialist returned non-JSON response: %s", exc)
-        return state.model_copy(update={
-            "error": f"Specialist parse error: {exc}",
-        })
+        return state.model_copy(
+            update={
+                "error": f"Specialist parse error: {exc}",
+            }
+        )
     except Exception as exc:
         logger.exception("Specialist error: task_id=%s agent=%s", state.task_id, state.agent_role)
         return state.model_copy(update={"error": str(exc)})
@@ -138,6 +160,7 @@ def should_continue(state: AgentState) -> Literal["supervisor", "__end__"]:
 # ---------------------------------------------------------------------------------------
 # Graph builder
 # ---------------------------------------------------------------------------------------
+
 
 def build_supervisor_graph(
     memory_store: SharedMemoryStore,
@@ -172,6 +195,7 @@ def build_supervisor_graph(
 # ---------------------------------------------------------------------------------------
 # Supervisor runner
 # ---------------------------------------------------------------------------------------
+
 
 class SupervisorRunner:
     """Runs the supervisor graph for a given task."""
@@ -210,14 +234,15 @@ class SupervisorRunner:
         initial_state = AgentState(
             current_task=task_description,
             task_id=tid,
-            project_id=project_id,
             skill_name=skill_name,
             context={"project_id": project_id},
         )
 
         logger.info(
             "Supervisor run started: task_id=%s project_id=%s skill=%s",
-            tid, project_id, skill_name,
+            tid,
+            project_id,
+            skill_name,
         )
 
         try:

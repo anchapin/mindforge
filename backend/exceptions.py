@@ -22,40 +22,6 @@ class ExceptionCategory(str, Enum):
     PANIC = "panic"
 
 
-# Exception → Category mapping
-EXCEPTION_CATEGORY: dict[type[Exception], ExceptionCategory] = {
-    # RETRY: safe to retry automatically
-    RateLimitError: ExceptionCategory.RETRY,  # noqa: F821
-    IntegrationTimeout: ExceptionCategory.RETRY,  # noqa: F821
-    TransientFailure: ExceptionCategory.RETRY,  # noqa: F821
-    # ESCALATE: requires human intervention
-    PermissionError: ExceptionCategory.ESCALATE,
-    AuthFailure: ExceptionCategory.ESCALATE,  # noqa: F821
-    SafetyViolation: ExceptionCategory.ESCALATE,  # noqa: F821
-    BudgetExceeded: ExceptionCategory.ESCALATE,  # noqa: F821
-    # LOG: record only, do not propagate
-    HMACTamperError: ExceptionCategory.LOG,  # noqa: F821
-    InvalidTokenError: ExceptionCategory.LOG,  # noqa: F821
-    ScrubbedDataWarning: ExceptionCategory.LOG,  # noqa: F821
-    # PANIC: unrecoverable, halt
-    OutOfMemory: ExceptionCategory.PANIC,  # noqa: F821
-    DatabaseCorruption: ExceptionCategory.PANIC,  # noqa: F821
-    UnrecoverableState: ExceptionCategory.PANIC,  # noqa: F821
-}
-
-
-def classify_exception(exc: Exception) -> ExceptionCategory:
-    """Classify an exception into its handling category.
-
-    Returns the category for known exceptions. Unknown exceptions default to
-    ESCALATE (conservative: requires human attention).
-    """
-    for exc_type, category in EXCEPTION_CATEGORY.items():
-        if isinstance(exc, exc_type):
-            return category
-    return ExceptionCategory.ESCALATE
-
-
 # ── Concrete exceptions ──────────────────────────────────────────────────────
 
 
@@ -150,3 +116,37 @@ class OutOfMemory(Exception):
     """
 
     pass
+
+
+# Exception → Category mapping
+EXCEPTION_CATEGORY: dict[type[Exception], ExceptionCategory] = {
+    # RETRY: safe to retry automatically
+    RateLimitError: ExceptionCategory.RETRY,
+    IntegrationTimeout: ExceptionCategory.RETRY,
+    TransientFailure: ExceptionCategory.RETRY,
+    # ESCALATE: requires human intervention
+    PermissionError: ExceptionCategory.ESCALATE,
+    AuthFailure: ExceptionCategory.ESCALATE,
+    SafetyViolation: ExceptionCategory.ESCALATE,
+    BudgetExceeded: ExceptionCategory.ESCALATE,
+    # LOG: record only, do not propagate
+    HMACTamperError: ExceptionCategory.LOG,
+    InvalidTokenError: ExceptionCategory.LOG,
+    ScrubbedDataWarning: ExceptionCategory.LOG,
+    # PANIC: unrecoverable, halt
+    OutOfMemory: ExceptionCategory.PANIC,
+    DatabaseCorruption: ExceptionCategory.PANIC,
+    UnrecoverableState: ExceptionCategory.PANIC,
+}
+
+
+def classify_exception(exc: Exception) -> ExceptionCategory:
+    """Classify an exception into its handling category.
+
+    Returns the category for known exceptions. Unknown exceptions default to
+    ESCALATE (conservative: requires human attention).
+    """
+    for exc_type, category in EXCEPTION_CATEGORY.items():
+        if isinstance(exc, exc_type):
+            return category
+    return ExceptionCategory.ESCALATE

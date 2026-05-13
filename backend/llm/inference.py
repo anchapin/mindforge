@@ -9,6 +9,7 @@ import asyncio
 import os
 import time
 from collections.abc import AsyncGenerator
+from typing import cast
 
 import httpx
 from tenacity import (
@@ -19,6 +20,7 @@ from tenacity import (
 )
 
 from backend.exceptions import BudgetExceeded, RateLimitError
+from backend.llm.router import LLM_ROUTER, InferenceTier
 
 # ── Retry Config ──────────────────────────────────────────────────────────────
 
@@ -133,7 +135,7 @@ class OpenRouterClient:
         stop=stop_after_attempt(LLM_RETRY_CONFIG["max_attempts"]),
         wait=wait_exponential_jitter(
             jitter=LLM_RETRY_CONFIG["jitter"],
-            base=LLM_RETRY_CONFIG["backoff_factor"],
+            exp_base=LLM_RETRY_CONFIG["backoff_factor"],
         ),
         retry=retry_if_exception_type((RateLimitError, TimeoutError)),
         reraise=True,
@@ -264,9 +266,7 @@ class OpenRouterClient:
                         import json
 
                         chunk = json.loads(data_str)
-                        token = chunk.get("choices", [{}])[0].get("delta", {}).get(
-                            "content", ""
-                        )
+                        token = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
                         if token:
                             yield token
 
@@ -339,3 +339,70 @@ async def _ollama_stream(
                 yield part["response"]
     except Exception as e:
         raise RuntimeError(f"Ollama stream failed: {e}") from e
+
+
+# ---------------------------------------------------------------------------------------
+# Module-level LLM completion wrappers (delegate to LLM_ROUTER)
+# ---------------------------------------------------------------------------------------
+
+
+async def llm_complete(
+    prompt: str,
+    tier: InferenceTier | None = None,
+    system: str = "",
+    agent_role: str | None = None,
+) -> str:
+    """Module-level LLM completion wrapper.
+
+    Delegates to LLM_ROUTER.complete() with stream=False.
+    Returns a plain string response.
+
+    Args:
+        prompt: The user prompt.
+        tier: Explicit inference tier override.
+        system: System prompt string.
+        agent_role: Agent role key for tier lookup.
+
+    Returns:
+        The complete response text.
+    """
+    result = await LLM_ROUTER.complete(
+        prompt=prompt,
+        tier=tier,
+        system=system,
+        agent_role=agent_role,
+        stream=False,
+    )
+    return cast(str, result)
+
+
+async def llm_complete_stream(
+    prompt: str,
+    tier: InferenceTier | None = None,
+    system: str = "",
+    agent_role: str | None = None,
+) -> AsyncGenerator[str, None]:
+    """Module-level streaming LLM completion wrapper.
+
+    Delegates to LLM_ROUTER.complete() with stream=True.
+    Yields tokens as they arrive.
+
+    Args:
+        prompt: The user prompt.
+        tier: Explicit inference tier override.
+        system: System prompt string.
+        agent_role: Agent role key for tier lookup.
+
+    Yields:
+        Individual tokens from the streaming response.
+    """
+    result = await LLM_ROUTER.complete(
+        prompt=prompt,
+        tier=tier,
+        system=system,
+        agent_role=agent_role,
+        stream=True,
+    )
+    # stream=True always returns AsyncGenerator; yield its tokens directly
+    async for token in cast(AsyncGenerator[str, None], result):
+        yield token
