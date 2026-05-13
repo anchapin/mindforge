@@ -176,24 +176,24 @@ class SharedMemoryStore:
 
         # Semantic layer — hybrid vector + BM25 retrieval
         if "semantic" in memory_types:
-            records = await self._semantic.retrieve(
+            semantic_records = await self._semantic.retrieve(
                 query=query,
                 project_id=project_id,
                 top_k=top_k,
             )
             formatted = "\n".join(
                 f"- [{r.metadata.get('agent_role','?')}] {r.text[:200]}"
-                for r in records
+                for r in semantic_records
             )
             results.append(MemoryResult(
                 memory_type="semantic",
-                records=records,
+                records=semantic_records,
                 formatted=formatted or "(no relevant semantic memories)",
             ))
 
         # Episodic layer
         if "episodic" in memory_types:
-            episodic_records = self._episodic.query_by_project(
+            episodic_records: list[EpisodicMemory] = self._episodic.query_by_project(
                 project_id=project_id,
                 task_type=task_type,
                 limit=top_k,
@@ -251,22 +251,20 @@ class SharedMemoryStore:
         """Direct (non-queued) semantic write — used when you need IDs immediately."""
         from .sanitizer import ContentSource, SanitizationResult, sanitize_for_memory
 
-        sanitization: SanitizationResult = sanitize_for_memory(
+        result: SanitizationResult = sanitize_for_memory(
             text=text,
             source=ContentSource.SKILL_OUTPUT,
             project_id=project_id,
         )
-        sanitized_text = sanitization.text
-        meta = sanitization.as_metadata()
-        if meta.get("flags"):
+        if result.flags:
             logger.warning(
                 "Suspicious semantic write flagged: risk=%.2f, flags=%s",
-                meta.get("risk_score", 0),
-                meta.get("flags", []),
+                result.risk_score,
+                result.flags,
             )
 
         return await self._semantic.add(
-            text=sanitized_text,
+            text=result.text,
             project_id=project_id,
             task_id=task_id,
             agent_role=agent_role,

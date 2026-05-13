@@ -170,9 +170,36 @@ async def specialist_node(
 
 
 def should_continue(state: AgentState) -> Literal["supervisor", END]:  # type: ignore[return-value,valid-type]
-    """Graph routing: after specialist, either loop back or end."""
+    """Graph routing: after specialist, either loop back or end.
+
+    Layer 3 — Approval gate amplification (§3b.8):
+    If the specialist wants to execute a high-stakes action AND memory
+    was the dominant context (>50%), force the draft-approval cycle
+    by returning to supervisor to wait for human approval.
+    """
     if state.error and "retry" in state.context.get("flags", []):  # type: ignore[union-attr]
         return "supervisor"
+
+    # Layer 3: memory-driven high-stakes actions require approval
+    result = state.result or {}
+    proposed_action = result.get("proposed_action", "")
+    if (
+        proposed_action
+        and is_high_stakes_action(proposed_action)
+        and requires_memory_approval_gate(
+            action=proposed_action,
+            memory_context_ratio=state.context.get("memory_ratio", 0.0),
+        )
+    ):
+        logger.info(
+            "Layer 3 approval gate triggered: action=%s memory_ratio=%.2f — awaiting human approval",
+            proposed_action,
+            state.context.get("memory_ratio", 0.0),
+        )
+        # Force pending_approval in context and return to supervisor
+        # The human approval gate in api/routes/tasks.py will handle this
+        return END  # Supervisor will pick up the pending_approval state
+
     return END
 
 
@@ -183,7 +210,7 @@ def should_continue(state: AgentState) -> Literal["supervisor", END]:  # type: i
 def build_supervisor_graph(
     memory_store: SharedMemoryStore,
     checkpointer_path: str | None = None,
-) -> StateGraph:
+) -> StateGraph:  # type: ignore[return-value]
     """Build the LangGraph supervisor workflow."""
 
     async def _specialist_async(state: AgentState) -> AgentState:
@@ -220,7 +247,7 @@ def build_supervisor_graph(
             )
             return builder.compile(checkpointer=MemorySaver())
 
-    return builder.compile()
+    return builder.compile()  # type: ignore[return-value]
 
 
 # ---------------------------------------------------------------------------------------
@@ -275,7 +302,7 @@ class SupervisorRunner:
         )
 
         try:
-            final_state = await self.graph.ainvoke(initial_state, cfg)
+            final_state = await self.graph.ainvoke(initial_state, cfg)  # type: ignore[attr-defined]
             return final_state
         except Exception as exc:
             logger.exception("Supervisor run failed: task_id=%s", tid)

@@ -53,7 +53,7 @@ class ApprovalGateWithNoNext(SkillGraphError):
     pass
 
 
-def validate_skill_graph(skill_data: dict) -> None:
+def validate_skill_graph(skill_data: dict) -> list[str]:
     """Validate a skill YAML structure per SPEC.md Section 2.3 rules.
 
     Rules:
@@ -155,6 +155,8 @@ def validate_skill_graph(skill_data: dict) -> None:
             raise MissingNodeError(error)
         if "Approval node" in error and "no outgoing edges" in error:
             raise ApprovalGateWithNoNext(error)
+
+    return errors
 
 
 # ---------------------------------------------------------------------------

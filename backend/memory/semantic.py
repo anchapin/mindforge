@@ -21,13 +21,13 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
-if TYPE_CHECKING:
-    from rank_bm25 import BM25Okapi
-
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 
 from .embeddings import ChunkConfig, chunk_text, embed_texts
+
+if TYPE_CHECKING:
+    from rank_bm25 import BM25Okapi  # noqa: F401
 
 logger = logging.getLogger(__name__)
 
@@ -199,8 +199,8 @@ class SemanticMemory:
             self._collection.add(
                 ids=ids,
                 documents=texts,
-                embeddings=embeddings,
-                metadatas=metadatas,
+                embeddings=embeddings,  # type: ignore[arg-type]
+                metadatas=metadatas,  # type: ignore[arg-type]
             )
             # Invalidate BM25 index (will be rebuilt on next search)
             self._bm25_index = None
@@ -223,7 +223,12 @@ class SemanticMemory:
         Returns records sorted by cosine similarity (descending).
         Entries with failed HMAC verification are excluded.
         """
-        # Embed query
+        try:
+            import numpy as np  # noqa: F401
+        except ImportError:
+            pass  # type: ignore[no-redef]
+
+        # Embed query (async)
         query_embs = await embed_texts([query])
         if not query_embs:
             return []
@@ -235,7 +240,7 @@ class SemanticMemory:
             where["project_id"] = project_id
 
         results = self._collection.query(
-            query_embeddings=[query_emb],
+            query_embeddings=[query_emb],  # type: ignore[arg-type]
             n_results=top_k * 2,
             where=where if where else None,
             include=["documents", "metadatas", "distances"],
@@ -245,10 +250,10 @@ class SemanticMemory:
         if not results["ids"] or not results["ids"][0]:
             return []
 
-        for i, record_id in enumerate(results["ids"][0]):
-            doc = results["documents"][0][i]
-            meta = results["metadatas"][0][i]
-            distance = results["distances"][0][i] if "distances" in results else 0.0
+        for i, record_id in enumerate(results["ids"][0]):  # type: ignore[index]
+            doc = results["documents"][0][i]  # type: ignore[index]
+            meta = results["metadatas"][0][i]  # type: ignore[index]
+            distance = results["distances"][0][i] if "distances" in results and results["distances"] and results["distances"][0] else 0.0
 
             # Cosine similarity from distance (ChromaDB L2 distance)
             similarity = 1.0 - distance if distance <= 2.0 else 0.0
@@ -258,17 +263,17 @@ class SemanticMemory:
 
             # HMAC verification
             sig = meta.get("hmac_sig", "")
-            if sig and not self._verify(sig, doc, {k: v for k, v in meta.items() if k not in ("hmac_sig",)}):
+            if sig and not self._verify(sig, doc, {k: v for k, v in meta.items() if k not in ("hmac_sig",)}):  # type: ignore[arg-type]
                 logger.warning("HMAC mismatch on semantic memory %s — excluding", record_id)
                 continue
 
             records.append(SemanticMemoryRecord(
                 id=record_id,
-                project_id=meta.get("project_id"),
+                project_id=meta.get("project_id"),  # type: ignore[arg-type]
                 text=doc,
-                embedding=None,
-                metadata=meta,
-                hmac_sig=sig,
+                embedding=None,  # embeddings not stored in records
+                metadata=meta,  # type: ignore[arg-type]
+                hmac_sig=sig,  # type: ignore[arg-type]
             ))
 
         return records
@@ -291,13 +296,13 @@ class SemanticMemory:
 
         results = self._collection.get(
             where=where if where else None,
-            include=["documents", "ids"],
+            include=["documents"],  # type: ignore[list-item]
         )
 
         if not results["ids"]:
             return
 
-        self._bm25_corpus = results["documents"]
+        self._bm25_corpus = results["documents"] or []  # type: ignore[assignment]
         self._bm25_ids = results["ids"]
         tokenized = [doc.lower().split() for doc in self._bm25_corpus]
         self._bm25_index = BM25Okapi(tokenized)
@@ -371,7 +376,6 @@ class SemanticMemory:
         """Delete all records for a project. Returns count deleted."""
         results = self._collection.get(
             where={"project_id": project_id},
-            include=["ids"],
         )
         ids = results.get("ids", [])
         if ids:
