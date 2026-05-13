@@ -85,11 +85,12 @@ async def _classify_intent(
     try:
         response = await llm_router.complete(
             prompt=prompt,
-            tier=llm_router.__class__.__name__,
+            tier=None,
             system="You are a concise task classifier. Output only the intent label.",
             agent_role="cmo",
         )
-        return response.strip().lower().replace(" ", "_")
+        result = response if isinstance(response, str) else await response
+        return result.strip().lower().replace(" ", "_")
     except Exception as exc:  # pragma: no cover
         logger.warning("intent classification failed: %s", exc)
         return "general"

@@ -10,7 +10,7 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.backend
-    profiles: [dev, prod, test]
+    profiles: [dev, prod]
     restart: unless-stopped
     volumes:
       - backend_data:/app/data

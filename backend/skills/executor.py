@@ -247,7 +247,7 @@ async def _execute_dag(
         for edge in graph.edges:
             if edge.get("from_node") == node.id:
                 if _evaluate_condition(edge.get("condition", ""), ctx.scratch):
-                    next_node = node_map.get(edge.get("to"))
+                    next_node = node_map.get(edge.get("to", ""))
                     if next_node and next_node.id not in ctx.nodes_completed:
                         pending.append(next_node)
 
@@ -374,7 +374,7 @@ async def execute_skill_continue(
         for edge in graph.edges:
             if edge.get("from_node") == node.id:
                 if _evaluate_condition(edge.get("condition", ""), ctx.scratch):
-                    next_node = node_map.get(edge.get("to"))
+                    next_node = node_map.get(edge.get("to", ""))
                     if next_node and next_node.id not in ctx.nodes_completed:
                         pending.append(next_node)
 

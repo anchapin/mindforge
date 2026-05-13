@@ -321,10 +321,11 @@ async def _ollama_stream(
     temperature: float = 0.0,
 ) -> AsyncGenerator[str, None]:
     """Streaming response from local Ollama server."""
-    import ollama
+    from ollama._client import AsyncClient
 
     try:
-        response = await ollama.async_generate(
+        client = AsyncClient()
+        response = await client.generate(
             model=model,
             prompt=prompt,
             system=system if system else None,

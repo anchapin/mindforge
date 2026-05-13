@@ -7,7 +7,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
+from itertools import chain
 from pathlib import Path
+from typing import Iterator
 
 import yaml
 
@@ -78,13 +80,13 @@ def validate_skill_graph(skill_def: dict) -> list[str]:
             self.on_stack: set[str] = set()
 
         def has_cycle_from(self, start: str, visited: set[str]) -> bool:
-            stack: list[tuple[str, iter]] = [(start, iter([
+            stack: list[tuple[str, Iterator[str]]] = [(start, iter([
                 e.get("to", "") for e in edges if e.get("from") == start
             ]))]
             while stack:
                 node_id, neighbors_iter = stack[-1]
                 try:
-                    neighbor = next(neighbors_iter)
+                    neighbor: str = next(neighbors_iter)
                 except StopIteration:
                     stack.pop()
                     self.on_stack.discard(node_id)
