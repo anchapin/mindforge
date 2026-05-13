@@ -16,7 +16,6 @@ import hmac
 import json
 import logging
 import os
-import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -25,7 +24,7 @@ from typing import Any
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 
-from .embeddings import embed_texts, ChunkConfig, chunk_text
+from .embeddings import ChunkConfig, chunk_text, embed_texts
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +113,7 @@ class SemanticMemory:
             name=CHROMA_COLLECTION,
             metadata={"description": "MindForge semantic memory"},
         )
-        self._bm25_index: "BM25Okapi | None" = None
+        self._bm25_index: BM25Okapi | None = None
         self._bm25_corpus: list[str] = []
         self._bm25_ids: list[str] = []
 
@@ -223,11 +222,6 @@ class SemanticMemory:
         Returns records sorted by cosine similarity (descending).
         Entries with failed HMAC verification are excluded.
         """
-        try:
-            import numpy as np
-        except ImportError:
-            import math as np  # type: ignore[no-redef]
-
         # Embed query
         query_embs = embed_texts([query])
         if not query_embs:
@@ -284,7 +278,7 @@ class SemanticMemory:
     def build_bm25_index(self, project_id: str | None = None) -> None:
         """Rebuild BM25 index from all records. Call after writes."""
         try:
-            from rank_bm25 import BM25Okapi
+            from rank_bm25 import BM25Okapi  # noqa: F401
         except ImportError:
             logger.warning("rank_bm25 not installed — hybrid search falls back to vector only")
             return
@@ -318,7 +312,7 @@ class SemanticMemory:
         This is the primary retrieval method used by SharedMemoryStore.
         """
         try:
-            from rank_bm25 import BM25Okapi
+            from rank_bm25 import BM25Okapi  # noqa: F401
         except ImportError:
             use_bm25 = False
 
