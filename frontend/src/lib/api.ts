@@ -77,3 +77,48 @@ export async function cancelTask(taskId: string): Promise<void> {
   const res = await fetch(`${API_BASE}/api/tasks/${taskId}/cancel`, { method: "POST" });
   if (!res.ok) throw new Error(`Failed to cancel task: ${res.statusText}`);
 }
+
+export interface Skill {
+  id: string;
+  name: string;
+  description?: string;
+  version?: string;
+  trigger?: string;
+  created_at: string;
+}
+
+export async function listSkills(): Promise<Skill[]> {
+  const res = await fetch(`${API_BASE}/api/skills/`);
+  if (!res.ok) throw new Error(`Failed to list skills: ${res.statusText}`);
+  return res.json();
+}
+
+export async function getSkill(skillId: string): Promise<Skill> {
+  const res = await fetch(`${API_BASE}/api/skills/${skillId}`);
+  if (!res.ok) throw new Error(`Failed to get skill: ${res.statusText}`);
+  return res.json();
+}
+
+export interface MemoryEntry {
+  id: string;
+  memory_type: string;
+  content: string;
+  project_id?: string;
+  created_at: string;
+}
+
+export async function listMemory(): Promise<{
+  semantic: MemoryEntry[];
+  episodic: MemoryEntry[];
+  style: MemoryEntry[];
+}> {
+  const res = await fetch(`${API_BASE}/api/memory/`);
+  if (!res.ok) throw new Error(`Failed to list memory: ${res.statusText}`);
+  return res.json();
+}
+
+export async function searchMemory(query: string): Promise<MemoryEntry[]> {
+  const res = await fetch(`${API_BASE}/api/memory/search?q=${encodeURIComponent(query)}`);
+  if (!res.ok) throw new Error(`Failed to search memory: ${res.statusText}`);
+  return res.json();
+}

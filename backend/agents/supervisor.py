@@ -169,6 +169,33 @@ async def specialist_node(
         return state.model_copy(update={"error": str(exc)})
 
 
+# ---------------------------------------------------------------------------------------
+# Layer 3 — Approval gate helpers (§3b.8)
+# ---------------------------------------------------------------------------------------
+
+_HIGH_STAKES_ACTIONS: frozenset[str] = frozenset([
+    "send_email",
+    "send_email_reply",
+    "github_push",
+    "github_create_pr",
+    "github_merge_pr",
+    "stripe_refund",
+    "stripe_payment",
+    "delete_memory",
+    "delete_task",
+])
+
+
+def is_high_stakes_action(action: str) -> bool:
+    """Return True if action is high-stakes (email/GitHub/Stripe/destructive)."""
+    return action in _HIGH_STAKES_ACTIONS
+
+
+def requires_memory_approval_gate(action: str, memory_context_ratio: float) -> bool:
+    """Return True if memory-dominated context (>50%) + high-stakes action triggers approval gate."""
+    return memory_context_ratio > 0.5
+
+
 def should_continue(state: AgentState) -> Literal["supervisor", END]:  # type: ignore[return-value,valid-type]
     """Graph routing: after specialist, either loop back or end.
 
