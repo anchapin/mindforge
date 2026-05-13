@@ -33,7 +33,7 @@ class WritingProfile:
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> "WritingProfile":
+    def from_row(cls, row: sqlite3.Row) -> WritingProfile:
         """Deserialize from a sqlite3.Row."""
         data = dict(row)
         # signature_phrases stored as JSON string
@@ -102,7 +102,7 @@ class WritingProfileStore:
             ).fetchone()
             if not exists:
                 conn.execute(
-                    f"INSERT INTO writing_profile (id) VALUES (?)",
+                    "INSERT INTO writing_profile (id) VALUES (?)",
                     (self._SINGLETON_ID,),
                 )
             conn.commit()
@@ -153,8 +153,8 @@ class WritingProfileStore:
         This is the text injected into agent system prompts so they write in the user's voice.
         """
         p = self.get()
-        greeting_note = f'(never "Hey" or "Dear")' if "Hi" in p.greeting_style else ""
-        signoff_note = f'(never "Best" or "Thanks")' if p.signoff_style != "Best" else ""
+        greeting_note = '(never "Hey" or "Dear")' if "Hi" in p.greeting_style else ""
+        signoff_note = '(never "Best" or "Thanks")' if p.signoff_style != "Best" else ""
 
         return f"""You are drafting as this user. Their style:
 - Tone: {p.tone}

@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-import uuid
 import os
+import uuid
 from datetime import datetime
+
 from cryptography.fernet import Fernet
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter(prefix="/api/integrations", tags=["integrations"])

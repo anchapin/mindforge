@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-import yaml
 import logging
+
+import yaml
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 

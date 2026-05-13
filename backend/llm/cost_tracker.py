@@ -7,16 +7,15 @@ Environment variable overrides allow emergency adjustments.
 
 from __future__ import annotations
 
-import logging
 import os
 import threading
 from collections import deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
-from backend.exceptions import BudgetExceeded
+import structlog
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger(__name__)
 
 
 # ── Default Limits ────────────────────────────────────────────────────────────

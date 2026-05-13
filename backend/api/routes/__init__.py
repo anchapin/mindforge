@@ -1,5 +1,5 @@
 """API route modules."""
 
-from . import tasks, memories, skills, integrations
+from . import integrations, memories, skills, tasks
 
 __all__ = ["tasks", "memories", "skills", "integrations"]

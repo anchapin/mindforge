@@ -16,16 +16,18 @@ import hmac
 import json
 import logging
 import os
-import sqlite3
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from rank_bm25 import BM25Okapi
 
 import chromadb
 from chromadb.config import Settings as ChromaSettings
 
-from .embeddings import embed_texts, ChunkConfig, chunk_text
+from .embeddings import ChunkConfig, chunk_text, embed_texts
 
 logger = logging.getLogger(__name__)
 
@@ -103,18 +105,16 @@ class SemanticMemory:
             )
         else:
             # Client-server mode
-            self._client = chromadb.Client(
-                api=chromadb.http.HTTPClient(
-                    host=chroma_host or CHROMA_HOST,
-                    settings=ChromaSettings(anonymized_telemetry=False),
-                )
+            self._client = chromadb.HttpClient(
+                host=chroma_host or CHROMA_HOST,
+                settings=ChromaSettings(anonymized_telemetry=False),
             )
 
         self._collection = self._client.get_or_create_collection(
             name=CHROMA_COLLECTION,
             metadata={"description": "MindForge semantic memory"},
         )
-        self._bm25_index: "BM25Okapi | None" = None
+        self._bm25_index: BM25Okapi | None = None
         self._bm25_corpus: list[str] = []
         self._bm25_ids: list[str] = []
 
@@ -212,7 +212,7 @@ class SemanticMemory:
     # Read path
     # ---------------------------------------------------------------------------
 
-    def search(
+    async def search(
         self,
         query: str,
         project_id: str | None = None,
@@ -223,13 +223,8 @@ class SemanticMemory:
         Returns records sorted by cosine similarity (descending).
         Entries with failed HMAC verification are excluded.
         """
-        try:
-            import numpy as np
-        except ImportError:
-            import math as np  # type: ignore[no-redef]
-
         # Embed query
-        query_embs = embed_texts([query])
+        query_embs = await embed_texts([query])
         if not query_embs:
             return []
         query_emb = query_embs[0]
@@ -271,6 +266,7 @@ class SemanticMemory:
                 id=record_id,
                 project_id=meta.get("project_id"),
                 text=doc,
+                embedding=None,
                 metadata=meta,
                 hmac_sig=sig,
             ))
@@ -284,7 +280,7 @@ class SemanticMemory:
     def build_bm25_index(self, project_id: str | None = None) -> None:
         """Rebuild BM25 index from all records. Call after writes."""
         try:
-            from rank_bm25 import BM25Okapi
+            from rank_bm25 import BM25Okapi  # noqa: F401
         except ImportError:
             logger.warning("rank_bm25 not installed — hybrid search falls back to vector only")
             return
@@ -318,12 +314,12 @@ class SemanticMemory:
         This is the primary retrieval method used by SharedMemoryStore.
         """
         try:
-            from rank_bm25 import BM25Okapi
+            from rank_bm25 import BM25Okapi  # noqa: F401
         except ImportError:
             use_bm25 = False
 
         # Vector search
-        vector_results = self.search(query, project_id=project_id, top_k=top_k * 2)
+        vector_results = await self.search(query, project_id=project_id, top_k=top_k * 2)
         vector_by_id = {r.id: r for r in vector_results}
 
         # BM25 search

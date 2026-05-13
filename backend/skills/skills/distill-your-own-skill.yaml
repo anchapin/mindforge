@@ -1,0 +1,117 @@
+version: "1"
+name: distill-your-own-skill
+description: >
+  Interactively guide the user through creating a new custom skill YAML file
+  from a plain-language description. Generates a valid execution_graph DAG,
+  validates it, and saves it to the skills directory.
+category: developer_tools
+trigger:
+  type: keyword
+  keywords:
+    - create skill
+    - new skill
+    - make a skill
+    - build a skill
+    - write a skill
+    - define a skill
+    - skill author
+  intents:
+    - create_skill
+    - define_workflow
+
+execution_graph:
+  type: directed_acyclic_graph
+  nodes:
+    - id: elicit_description
+      agent: cmo
+      goal: >
+        Ask the user to describe what the skill should do, in plain English.
+        Elicit: the trigger (how it is invoked), the steps it should take,
+        any approval gates needed, and which integrations it requires.
+      memory_layers:
+        - episodic
+
+    - id: draft_graph
+      agent: engineer
+      goal: >
+        Given the user's description, draft a valid execution_graph with nodes,
+        edges, and conditions. Use the user's described steps as node goals.
+        Infer the appropriate agent role for each step (coo, cmo, researcher, engineer).
+        Add requires_approval: true on any step that involves an external action.
+      tools:
+        - code_write
+      memory_layers:
+        - semantic
+      output_schema:
+        type: object
+        fields:
+          - skill_yaml
+          - node_count
+          - has_approval_gate
+
+    - id: validate_graph
+      agent: engineer
+      goal: >
+        Validate the drafted skill YAML by running validate_skill_graph().
+        If there are errors, fix them and re-validate until the graph is valid.
+        Report any cycles, missing nodes, or orphan approval gates.
+      tools:
+        - code_write
+      outcome_on_failure: fail
+
+    - id: confirm
+      agent: cmo
+      goal: >
+        Present the validated skill YAML to the user for confirmation.
+        Ask if they want to save it, edit any part, or discard.
+        If approved, save the YAML to the skills directory.
+      requires_approval: true
+      approval_timeout_minutes: 1440
+      memory_layers:
+        - style
+
+    - id: save
+      agent: engineer
+      goal: >
+        Save the approved skill YAML to the skills directory.
+        Register it with the skill registry.
+      tools:
+        - code_write
+      memory_layers:
+        - episodic
+
+    - id: end
+      agent: coo
+      goal: Skill creation complete.
+      memory_layers: []
+
+  edges:
+    - from: elicit_description
+      to: draft_graph
+      condition: elicit_description.done
+    - from: draft_graph
+      to: validate_graph
+      condition: draft_graph.success
+    - from: draft_graph
+      to: confirm
+      condition: draft_graph.completed_no_changes
+    - from: validate_graph
+      to: confirm
+      condition: validate_graph.success
+    - from: confirm
+      to: save
+      condition: confirm.approved
+    - from: confirm
+      to: end
+      condition: confirm.rejected
+    - from: confirm
+      to: end
+      condition: confirm.timeout
+    - from: save
+      to: end
+      condition: save.success
+
+memory_layers:
+  - semantic
+  - episodic
+  - style

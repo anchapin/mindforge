@@ -1,6 +1,7 @@
 """Base tool interface. From SPEC.md Section 5.7.7."""
 
 from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
@@ -23,7 +24,7 @@ class BaseTool(ABC):
     required_integrations: list[str] = []
 
     @abstractmethod
-    async def execute(self, **kwargs) -> ToolResult:
+    async def execute(self, action: str, **kwargs) -> ToolResult:
         ...
 
     @abstractmethod

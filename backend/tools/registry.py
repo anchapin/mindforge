@@ -7,9 +7,8 @@ All tools must be registered here. No direct tool instantiation elsewhere.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
-from .base import BaseTool, ToolResult
+from .base import BaseTool
 
 logger = logging.getLogger(__name__)
 
@@ -49,12 +48,12 @@ class ToolRegistry:
 
 def register_all_tools() -> None:
     """Auto-register all built-in tools. Call at startup."""
+    from .email_fetch import EmailFetchTool
     from .github import GitHubTool
     from .stripe import StripeTool
-    from .email_fetch import EmailFetchTool
 
     for tool_cls in [GitHubTool, StripeTool, EmailFetchTool]:
         try:
-            ToolRegistry.register(tool_cls())
+            ToolRegistry.register(tool_cls())  # type: ignore
         except Exception as exc:
             logger.warning("Failed to auto-register %s: %s", tool_cls.__name__, exc)

@@ -11,7 +11,7 @@ Only Layer 1 lives here. Layers 2 and 3 are in backend/llm/prompts.py.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 
 # ---------------------------------------------------------------------------------------

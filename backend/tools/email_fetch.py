@@ -1,11 +1,13 @@
 """IMAP email fetch tool -- Phase 1 (no OAuth)."""
 
 from __future__ import annotations
-import imaplib
+
 import email
-from email.header import decode_header
-import time
+import imaplib
 import logging
+import time
+from email.header import decode_header
+
 from .base import BaseTool, ToolResult
 
 logger = logging.getLogger(__name__)
@@ -27,7 +29,7 @@ class EmailFetchTool(BaseTool):
     description = "Fetch emails from IMAP inbox (read-only)"
     required_integrations = ["email"]
 
-    async def execute(self, action: str, **kwargs) -> ToolResult:
+    async def execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
         import asyncio
         start = time.monotonic()
 
@@ -54,7 +56,7 @@ class EmailFetchTool(BaseTool):
                             "from": _decode_header_value(msg.get("From", "")),
                             "subject": _decode_header_value(msg.get("Subject", "")),
                             "date": msg.get("Date", ""),
-                            "body": _extract_body(msg),
+                            "body": self._extract_body(msg),
                         })
                     mail.logout()
                     return ToolResult(success=True, data={"emails": emails}, latency_ms=(time.monotonic() - start) * 1000)

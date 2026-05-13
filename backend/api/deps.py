@@ -6,13 +6,12 @@ Provides shared resources: database connections, memory store, WebSocket manager
 from __future__ import annotations
 
 import os
-from contextlib import asynccontextmanager
-from typing import AsyncIterator
-
 import sqlite3
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 
+from ..api.websocket import WSConnectionManager, ws_manager
 from ..memory.store import SharedMemoryStore
-from ..api.websocket import ws_manager, WSConnectionManager
 
 DATA_DIR = os.getenv("DATA_DIR", "/app/data")
 DB_PATH = os.path.join(DATA_DIR, "mindforge.db")
@@ -50,3 +49,26 @@ async def get_db_context() -> AsyncIterator[sqlite3.Connection]:
 
 def get_ws_manager() -> WSConnectionManager:
     return ws_manager
+
+
+# ---------------------------------------------------------------------------------------
+# ---------------------------------------------------------------------------------------
+# FastAPI route dependencies
+# ---------------------------------------------------------------------------------------
+
+
+async def db_dep() -> AsyncIterator[sqlite3.Connection]:
+    """FastAPI dependency that provides a SQLite database connection.
+
+    Yields a connection from get_db() and closes it when done.
+    """
+    conn = get_db()
+    try:
+        yield conn
+    finally:
+        conn.close()
+
+
+async def memory_dep() -> SharedMemoryStore:
+    """FastAPI dependency that provides the shared memory store singleton."""
+    return get_memory_store()

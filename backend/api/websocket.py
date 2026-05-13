@@ -9,9 +9,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
 
-from fastapi import WebSocket, WebSocketDisconnect
+from fastapi import WebSocket
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +71,7 @@ class WSConnectionManager:
                 self._global_connections.remove(websocket)
 
     async def send(self, task_id: str, message: dict) -> None:
-        message = _scrub(message)
+        message = _scrub(message)  # type: ignore[assignment]
         payload = json.dumps(message)
         async with self._lock:
             ws = self._connections.get(task_id)
@@ -84,7 +83,7 @@ class WSConnectionManager:
                 await self.disconnect(ws, task_id)
 
     async def broadcast(self, message: dict) -> None:
-        message = _scrub(message)
+        message = _scrub(message)  # type: ignore[assignment]
         payload = json.dumps(message)
         async with self._lock:
             listeners = list(self._global_connections)

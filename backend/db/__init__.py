@@ -1,9 +1,10 @@
 """Database health checks. From SPEC.md Section 5e.4."""
 
 from __future__ import annotations
+
+import logging
 import os
 import sqlite3
-import logging
 
 logger = logging.getLogger(__name__)
 
@@ -59,5 +60,9 @@ async def check_ollama() -> bool:
 
 
 async def check_all() -> dict[str, bool]:
-    results = await check_pglite()
+    results: dict[str, bool] = {
+        "pglite": await check_pglite(),
+        "chroma": await check_chroma(),
+        "temporal": await check_temporal(),
+    }
     return results

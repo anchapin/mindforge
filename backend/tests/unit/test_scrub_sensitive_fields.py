@@ -10,6 +10,8 @@ Sensitive keys (case-insensitive match):
   - token, authorization, cookie, session
 """
 
+from typing import Any, overload
+
 import pytest
 
 # SENSITIVE_KEYS from SPEC.md Section 3b.6
@@ -28,6 +30,12 @@ SENSITIVE_KEYS: set[str] = {
 }
 
 
+@overload
+def scrub(obj: dict) -> dict: ...
+@overload
+def scrub(obj: list) -> list: ...
+@overload
+def scrub(obj: dict | list) -> dict | list: ...
 def scrub(obj: dict | list) -> dict | list:
     """Recursively redact sensitive fields in a dict or list.
 
@@ -35,14 +43,24 @@ def scrub(obj: dict | list) -> dict | list:
     """
     if isinstance(obj, dict):
         return {
-            k: "[REDACTED]" if k.lower() in SENSITIVE_KEYS else scrub(v)
-            if isinstance(v, (dict, list))
-            else v
+            k: "[REDACTED]" if k.lower() in SENSITIVE_KEYS else _scrub_value(v)
             for k, v in obj.items()
         }
     elif isinstance(obj, list):
-        return [scrub(i) for i in obj]
+        return [_scrub_value(i) for i in obj]
     return obj
+
+
+def _scrub_value(v: Any) -> Any:
+    """Scrub a single non-primitive value (dict or list)."""
+    if isinstance(v, dict):
+        return {
+            k: "[REDACTED]" if k.lower() in SENSITIVE_KEYS else _scrub_value(vv)
+            for k, vv in v.items()
+        }
+    elif isinstance(v, list):
+        return [_scrub_value(i) for i in v]
+    return v
 
 
 @pytest.mark.parametrize(
@@ -73,7 +91,7 @@ def test_scrub_redacts_nested_sensitive_fields() -> None:
     """Sensitive fields nested inside dicts must be redacted."""
     payload = {
         "task_id": "123",
-        "nested": {"access_token": "also-secret", "safe_field": "ok"},
+        "nested": {"access_token": "***", "safe_field": "ok"},
     }
     result = scrub(payload)
     assert result["task_id"] == "123"
@@ -85,8 +103,8 @@ def test_scrub_redacts_in_lists() -> None:
     """Sensitive fields inside list items must be redacted."""
     payload = {
         "list": [
-            {"password": "bad", "role": "admin"},
-            {"api_key": "worse", "name": "ok"},
+            {"password": "***", "role": "admin"},
+            {"api_key": "***", "name": "ok"},
         ]
     }
     result = scrub(payload)
@@ -133,8 +151,8 @@ def test_scrub_case_insensitive_keys() -> None:
     """Sensitive key matching is case-insensitive."""
     payload = {
         "AUTH_TOKEN_ENC": "secret1",
-        "Access_Token": "secret2",
-        "PASSWORD": "secret3",
+        "Access_Token": "***",
+        "PASSWORD": "***",
     }
     result = scrub(payload)
     assert result["AUTH_TOKEN_ENC"] == "[REDACTED]"
@@ -161,7 +179,7 @@ def test_scrub_deeply_nested() -> None:
         "level1": {
             "level2": {
                 "level3": {
-                    "api_key": "nested-secret",
+                    "api_key": "***",
                     "task_id": "deep_task",
                 }
             }
@@ -180,3 +198,18 @@ def test_scrub_empty_dict() -> None:
 def test_scrub_empty_list() -> None:
     """Scrub handles empty lists."""
     assert scrub([]) == []
+
+
+def test_scrub_nested_list_of_dicts() -> None:
+    """Scrub handles nested lists containing dicts."""
+    payload = {
+        "users": [
+            {"name": "Alice", "api_key": "key1"},
+            {"name": "Bob", "api_key": "key2"},
+        ]
+    }
+    result = scrub(payload)
+    assert result["users"][0]["name"] == "Alice"
+    assert result["users"][0]["api_key"] == "[REDACTED]"
+    assert result["users"][1]["name"] == "Bob"
+    assert result["users"][1]["api_key"] == "[REDACTED]"

@@ -9,15 +9,13 @@ from __future__ import annotations
 import asyncio
 import os
 import time
-from dataclasses import dataclass, field
+from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 from enum import Enum
-from typing import AsyncGenerator
 
 import httpx
-import ollama
 
 from backend.exceptions import BudgetExceeded
-
 
 # ── Tier Enums and Configs ────────────────────────────────────────────────────
 
@@ -85,7 +83,7 @@ class CircuitBreaker:
         self._models = models or FALLBACK_CHAIN
         self._max_failures = max_failures
         self._circuit_timeout = circuit_timeout
-        self._failures: dict[str, int] = {m: 0 for m in self._models}
+        self._failures: dict[str, int] = dict.fromkeys(self._models, 0)
         self._circuit_open: dict[str, float] = {}  # model → open_time
         self._lock = asyncio.Lock()
 
@@ -244,6 +242,8 @@ class LLMRouter:
         self, cfg: LLMConfig, system: str, prompt: str
     ) -> str:
         """Call local Ollama server."""
+        import ollama
+
         try:
             response = ollama.generate(
                 model=cfg.model,
@@ -299,7 +299,7 @@ class LLMRouter:
                     await cb.record_success(model)
 
                 return response
-            except Exception as e:
+            except Exception:
                 # Record failure
                 if cb:
                     await cb.record_failure(model)
