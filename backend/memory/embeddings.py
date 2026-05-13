@@ -8,10 +8,9 @@ From SPEC.md §5.7.3.
 
 from __future__ import annotations
 
-import os
 import logging
-from dataclasses import dataclass, field
-from typing import AsyncIterator
+import os
+from dataclasses import dataclass
 
 import httpx
 

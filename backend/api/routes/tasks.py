@@ -15,10 +15,10 @@ from typing import Any
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from ..deps import memory_dep, db_dep, get_ws_manager
-from ...memory.store import SharedMemoryStore
-from ...memory.episodic import EpisodicMemory
 from ...agents.supervisor import SupervisorRunner
+from ...memory.episodic import EpisodicMemory
+from ...memory.store import SharedMemoryStore
+from ..deps import DB_PATH, db_dep, get_ws_manager, memory_dep
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
 
@@ -90,7 +90,6 @@ async def create_task(payload: TaskCreate, db=Depends(db_dep), memory: SharedMem
 
 async def _execute_task(task_id: str, description: str, project_id: str | None, memory: SharedMemoryStore):
     """Background task runner -- starts supervisor and updates task on completion."""
-    from ...memory.episodic import EpisodicMemory
 
     conn = sqlite3.connect(DB_PATH)
     conn.execute("UPDATE tasks SET status = 'running', updated_at = ? WHERE id = ?",

@@ -6,11 +6,11 @@ Exports:
     sanitize_for_memory -- Layer 1 prompt injection defense
 """
 
-from .store import SharedMemoryStore, classify_task_type
-from .sanitizer import sanitize_for_memory, classify_injection_risk, ContentSource
-from .style import WritingProfileStore
-from .episodic import EpisodicMemoryStore, EpisodicMemory
+from .episodic import EpisodicMemory, EpisodicMemoryStore
+from .sanitizer import ContentSource, classify_injection_risk, sanitize_for_memory
 from .semantic import SemanticMemory
+from .store import SharedMemoryStore, classify_task_type
+from .style import WritingProfileStore
 
 __all__ = [
     "SharedMemoryStore",

@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
-from ..deps import memory_dep, db_dep
 from ...memory.store import SharedMemoryStore
+from ..deps import db_dep, memory_dep
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
 

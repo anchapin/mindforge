@@ -20,12 +20,11 @@ from __future__ import annotations
 
 import os
 import re
-import structlog
 from dataclasses import dataclass, field
-from typing import Any
+
+import structlog
 
 from ..memory.sanitizer import (
-    INJECTION_PATTERNS,
     INJECTION_WEIGHT_PATTERNS,
 )
 
@@ -234,11 +233,11 @@ class GliguardResult:
 
 
 # Lazy-loaded singleton GLiGuard model instance.
-_gliguard_model: "GLiNER2 | None" = None
+_gliguard_model: GLiNER2 | None = None
 _gliguard_load_error: str | None = None
 
 
-def _get_gliguard_model() -> "GLiNER2 | None":
+def _get_gliguard_model() -> GLiNER2 | None:
     """Lazy-load GLiGuard model. Returns None if not available or disabled."""
     global _gliguard_model, _gliguard_load_error
 
