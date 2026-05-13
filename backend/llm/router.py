@@ -244,7 +244,7 @@ class LLMRouter:
     ) -> str:
         """Call local Ollama server."""
         try:
-            response = ollama.generate(
+            response = ollama.generate(  # type: ignore[call-args]
                 model=cfg.model,
                 prompt=prompt,
                 system=system if system else None,

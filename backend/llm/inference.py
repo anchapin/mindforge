@@ -328,10 +328,11 @@ async def _ollama_stream(
     import ollama
 
     try:
-        response = await ollama.async_generate(
+        client = ollama.AsyncClient()  # type: ignore[call-args]
+        response = await client.generate(
             model=model,
             prompt=prompt,
-            system=system if system else None,
+            system=system if system else None,  # type: ignore[arg-type]
             options={
                 "num_predict": max_tokens,
                 "temperature": temperature,

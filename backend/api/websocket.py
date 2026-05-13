@@ -51,8 +51,8 @@ class WSConnectionManager:
     """
 
     def __init__(self):
-        self._connections: dict[str, WebSocket] = {}
-        self._global_connections: list[WebSocket] = []
+        self._connections: dict[str, WebSocket] = {}  # type: ignore[assignment]
+        self._global_connections: list[WebSocket] = []  # type: ignore[assignment]
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket, task_id: str | None = None) -> None:

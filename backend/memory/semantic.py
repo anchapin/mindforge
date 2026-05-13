@@ -105,11 +105,9 @@ class SemanticMemory:
             )
         else:
             # Client-server mode
-            self._client = chromadb.Client(
-                api=chromadb.http.HTTPClient(
-                    host=chroma_host or CHROMA_HOST,
-                    settings=ChromaSettings(anonymized_telemetry=False),
-                )
+            self._client = chromadb.HttpClient(  # type: ignore[call-args]
+                host=chroma_host or CHROMA_HOST,
+                settings=ChromaSettings(anonymized_telemetry=False),
             )
 
         self._collection = self._client.get_or_create_collection(

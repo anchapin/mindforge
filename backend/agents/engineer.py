@@ -30,7 +30,7 @@ async def run(
     task_description: str,
     memory_context: str,
     context: dict[str, Any],
-) -> dict[str, Any]:
+) -> dict[str, Any]:  # type: ignore[no-any-return]
     """Run the Engineer agent.
 
     Args:
