@@ -243,6 +243,7 @@ class LLMRouter:
         self, cfg: LLMConfig, system: str, prompt: str
     ) -> str:
         """Call local Ollama server."""
+        import ollama  # type: ignore[no-redef]
         try:
             response = ollama.generate(  # type: ignore[call-args]
                 model=cfg.model,
@@ -283,7 +284,8 @@ class LLMRouter:
             if cb and not cb.is_available(model):
                 continue  # circuit open, skip
 
-            try:
+            import ollama  # type: ignore[no-redef]
+        try:
                 if stream:
                     return self._openrouter_stream(
                         cfg, system, prompt, model=model, agent_role=agent_role
