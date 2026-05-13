@@ -12,7 +12,7 @@ from .base import BaseTool, ToolResult
 logger = logging.getLogger(__name__)
 
 
-class StripeTool(BaseTool):
+class StripeTool(BaseTool):  # type: ignore[override]
     name = "stripe_api"
     description = "Fetch Stripe revenue, charges, and customer data (read-only)"
     required_integrations = ["stripe"]

@@ -19,7 +19,7 @@ Skill YAML format (SPEC.md Section 2.3):
         condition: node_1.approved
 """
 
-from collections.abc import Iterator
+import collections.abc
 
 import pytest
 import yaml
@@ -115,7 +115,7 @@ def validate_skill_graph(skill_data: dict) -> list[str]:
             self.on_stack: set[str] = set()
 
         def has_cycle_from(self, start: str, visited: set[str]) -> bool:
-            stack: list[tuple[str, Iterator[str]]] = [(start, iter([
+            stack: list[tuple[str, collections.abc.Iterator[str]]] = [(start, iter([
                 e.get("to", "") for e in raw_edges if e.get("from") == start
             ]))]
             while stack:

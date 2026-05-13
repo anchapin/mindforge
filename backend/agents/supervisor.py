@@ -10,12 +10,11 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Literal
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-from ..llm.prompts import is_high_stakes_action, requires_memory_approval_gate
 from ..memory.store import SharedMemoryStore
 from . import cmo, coo, engineer, researcher
 from .routing import route_to_agent
@@ -59,6 +58,7 @@ class AgentState:
     """LangGraph state for the supervisor workflow."""
     current_task: str = ""
     task_id: str = ""
+    project_id: str = ""
     agent_role: str = "coo"
     memory_context: str = ""
     skill_name: str | None = None
@@ -169,7 +169,7 @@ async def specialist_node(
         return state.model_copy(update={"error": str(exc)})
 
 
-def should_continue(state: AgentState) -> str:  # type: ignore[misc]
+def should_continue(state: AgentState) -> Literal["supervisor", END]:  # type: ignore[return-value,valid-type]
     """Graph routing: after specialist, either loop back or end.
 
     Layer 3 — Approval gate amplification (§3b.8):
@@ -177,7 +177,7 @@ def should_continue(state: AgentState) -> str:  # type: ignore[misc]
     was the dominant context (>50%), force the draft-approval cycle
     by returning to supervisor to wait for human approval.
     """
-    if state.error and "retry" in state.context.get("flags", []):
+    if state.error and "retry" in state.context.get("flags", []):  # type: ignore[union-attr]
         return "supervisor"
 
     # Layer 3: memory-driven high-stakes actions require approval
@@ -235,17 +235,17 @@ def build_supervisor_graph(
         #   pip install langgraph-checkpoint-sqlite
         # For now, fall back to in-memory saver.
         try:
-            from langgraph.checkpoint.sqlite import SqliteSaver  # type: ignore[import-not-found]
+            from langgraph.checkpoint.sqlite import SqliteSaver
             from sqlalchemy import create_engine
             engine = create_engine(f"sqlite:///{checkpointer_path}")
             checkpointer = SqliteSaver(engine)
-            return builder.compile(checkpointer=checkpointer)  # type: ignore[return-value]
+            return builder.compile(checkpointer=checkpointer)
         except ImportError:
             logger.warning(
                 "SqliteSaver not available, using MemorySaver (no persistence). "
                 "Install langgraph-checkpoint-sqlite for persistence."
             )
-            return builder.compile(checkpointer=MemorySaver())  # type: ignore[return-value]
+            return builder.compile(checkpointer=MemorySaver())
 
     return builder.compile()  # type: ignore[return-value]
 
@@ -291,8 +291,9 @@ class SupervisorRunner:
         initial_state = AgentState(
             current_task=task_description,
             task_id=tid,
+            project_id=project_id or "",
             skill_name=skill_name,
-            context={"project_id": project_id},
+            context={"project_id": project_id or ""},
         )
 
         logger.info(

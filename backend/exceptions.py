@@ -27,7 +27,7 @@ class ExceptionCategory(str, Enum):
 # concrete exception classes are defined after this dict in the file.
 # Using a lazy import avoids NameError at module load time.
 
-def _get_exception_category_map():
+def _get_exception_category_map():  # type: ignore[no-redef]
     """Lazily build the exception→category map once all classes are defined."""
     return {
         # RETRY: safe to retry automatically

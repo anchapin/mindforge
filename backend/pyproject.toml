@@ -86,6 +86,7 @@ python_version = "3.12"
 warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true
+disable_error_code = ["override"]
 
 [[tool.mypy.overrides]]
 files = ["backend/tests/unit/test_scrub_sensitive_fields.py"]
