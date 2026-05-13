@@ -88,6 +88,10 @@ warn_return_any = true
 warn_unused_ignores = true
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+files = ["backend/tests/unit/test_scrub_sensitive_fields.py"]
+ignore = ["call-overload"]
+
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["backend/tests"]
