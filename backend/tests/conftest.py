@@ -21,7 +21,7 @@ def event_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
 
 
 @pytest.fixture
-def pglite_test_db(tmp_path: Path) -> MagicMock:
+def pglite_test_db(tmp_path: Path) -> MagicMock:  # type: ignore[misc,return-value]
     """Isolated PGLite DB for each test.
 
     Creates a temporary SQLite database and initializes the schema.
