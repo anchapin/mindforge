@@ -202,8 +202,8 @@ class SemanticMemory:
                 embeddings=embeddings,  # type: ignore[arg-type]
                 metadatas=metadatas,  # type: ignore[arg-type]
             )
-            # Invalidate BM25 index (will be rebuilt on next search)
-            self._bm25_index = None
+            # Rebuild BM25 index so it's ready for next retrieval
+            self.build_bm25_index(project_id=project_id)
 
         logger.debug("Added %d semantic memory chunks (project_id=%s)", len(ids), project_id)
         return ids
@@ -218,22 +218,28 @@ class SemanticMemory:
         project_id: str | None = None,
         top_k: int = 5,
     ) -> list[SemanticMemoryRecord]:
-        """Vector similarity search with project scoping.
+        """Hybrid retrieval entry point — delegates to retrieve() for BM25+vector RRF fusion.
 
-        Returns records sorted by cosine similarity (descending).
+        Returns records sorted by fused score (BM25 + vector similarity).
         Entries with failed HMAC verification are excluded.
         """
-        try:
-            import numpy as np  # noqa: F401
-        except ImportError:
-            pass  # type: ignore[no-redef]
+        return await self.retrieve(query=query, project_id=project_id, top_k=top_k)
 
-        # Embed query (async)
-        query_embs = await embed_texts([query])
-        if not query_embs:
-            return []
-        query_emb = query_embs[0]
+    async def _vector_search(
+        self,
+        query_emb: list[float],
+        project_id: str | None = None,
+        top_k: int = 5,
+        min_similarity: float = 0.0,
+    ) -> list[SemanticMemoryRecord]:
+        """Pure vector similarity search — used internally by retrieve().
 
+        Args:
+            query_emb: Pre-computed query embedding.
+            project_id: Optional project scope filter.
+            top_k: Number of results to return (before min_similarity filtering fetches more).
+            min_similarity: Minimum similarity threshold (0 = no filter, used by retrieve).
+        """
         # Build where filter
         where: dict[str, Any] = {}
         if project_id is not None:
@@ -258,21 +264,35 @@ class SemanticMemory:
             # Cosine similarity from distance (ChromaDB L2 distance)
             similarity = 1.0 - distance if distance <= 2.0 else 0.0
 
-            if similarity < MIN_SIMILARITY:
+            if similarity < min_similarity:
                 continue
 
-            # HMAC verification
+            # HMAC verification — only verify fields that were signed (project_id, task_id, agent_role)
+            # NOTE: None values in extra_meta are serialized as JSON null, but stored/retrieved as
+            # string "None". Convert back so HMAC verification sees the same null as was signed.
+            def _none_str_to_none(v: Any) -> Any:
+                return None if v == "None" else v
+
             sig = meta.get("hmac_sig", "")
-            if sig and not self._verify(sig, doc, {k: v for k, v in meta.items() if k not in ("hmac_sig",)}):  # type: ignore[arg-type]
+            signed_meta = {
+                "project_id": _none_str_to_none(meta.get("project_id")),
+                "task_id": _none_str_to_none(meta.get("task_id")),
+                "agent_role": _none_str_to_none(meta.get("agent_role")),
+            }
+            if sig and not self._verify(sig, doc, signed_meta):  # type: ignore[arg-type]
                 logger.warning("HMAC mismatch on semantic memory %s — excluding", record_id)
                 continue
 
+            # Make a mutable copy of metadata and inject distance for fusion
+            record_meta = dict(meta)
+            record_meta["distance"] = distance
+
             records.append(SemanticMemoryRecord(
                 id=record_id,
-                project_id=meta.get("project_id"),  # type: ignore[arg-type]
+                project_id=record_meta.get("project_id"),  # type: ignore[arg-type]
                 text=doc,
-                embedding=None,  # embeddings not stored in records
-                metadata=meta,  # type: ignore[arg-type]
+                embedding=None,
+                metadata=record_meta,  # type: ignore[arg-type]
                 hmac_sig=sig,  # type: ignore[arg-type]
             ))
 
@@ -323,8 +343,16 @@ class SemanticMemory:
         except ImportError:
             use_bm25 = False
 
-        # Vector search
-        vector_results = await self.search(query, project_id=project_id, top_k=top_k * 2)
+        # Embed query (async)
+        query_embs = await embed_texts([query])
+        if not query_embs:
+            return []
+        query_emb = query_embs[0]
+
+        # Vector search — no MIN_SIMILARITY filter here so BM25 can boost low-similarity matches
+        vector_results = await self._vector_search(
+            query_emb, project_id=project_id, top_k=top_k * 2, min_similarity=0.0
+        )
         vector_by_id = {r.id: r for r in vector_results}
 
         # BM25 search
@@ -366,8 +394,10 @@ class SemanticMemory:
         results = self._collection.get(where=where if where else None)
         return len(results.get("ids", []))
 
-    def delete(self, record_ids: list[str]) -> None:
-        """Delete records by ID."""
+    def delete(self, record_ids: str | list[str]) -> None:
+        """Delete records by ID (single or list)."""
+        if isinstance(record_ids, str):
+            record_ids = [record_ids]
         if record_ids:
             self._collection.delete(ids=record_ids)
             self._bm25_index = None
@@ -383,8 +413,10 @@ class SemanticMemory:
             self._bm25_index = None
         return len(ids)
 
-    def delete_all(self) -> int:
-        """Delete entire collection. Returns count deleted."""
+    def delete_all(self, project_id: str | None = None) -> int:
+        """Delete entire collection or scoped to project_id. Returns count deleted."""
+        if project_id is not None:
+            return self.delete_by_project(project_id)
         count = self.count()
         self._collection.delete(where={})
         self._bm25_index = None
