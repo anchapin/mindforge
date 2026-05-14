@@ -27,7 +27,10 @@ class IntegrationRateLimiter:
 
     Usage:
         limiter = IntegrationRateLimiter()
-        result = await limiter.integration_call("github", lambda: my_async_fn())
+        result = await limiter.integration_call("github", my_async_fn, arg1, kwarg=value)
+
+        # Most production tool code should use the module-level wrapper instead:
+        result = await integration_call("github", my_async_fn, arg1, kwarg=value)
 
     Concurrent calls to the SAME integration are serialized by a shared Semaphore.
     Calls to DIFFERENT integrations run in parallel.
@@ -36,8 +39,7 @@ class IntegrationRateLimiter:
     def __init__(self, limits: dict[str, int] | None = None) -> None:
         self._limits = limits or INTEGRATION_LIMITS
         self._semaphores: dict[str, asyncio.Semaphore] = {
-            key: asyncio.Semaphore(limit)
-            for key, limit in self._limits.items()
+            key: asyncio.Semaphore(limit) for key, limit in self._limits.items()
         }
         # Ensure _default always exists
         if "_default" not in self._semaphores:
@@ -51,6 +53,8 @@ class IntegrationRateLimiter:
         self,
         integration: str,
         fn: Callable[..., Awaitable[Any]],
+        *args: Any,
+        **kwargs: Any,
     ) -> Any:
         """Run fn with rate limiting for the given integration.
 
@@ -59,4 +63,23 @@ class IntegrationRateLimiter:
         """
         semaphore = self._get_semaphore(integration)
         async with semaphore:
-            return await fn()
+            return await fn(*args, **kwargs)
+
+
+DEFAULT_RATE_LIMITER = IntegrationRateLimiter()
+
+
+async def integration_call(
+    integration: str,
+    fn: Callable[..., Awaitable[Any]],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    """Run fn through the process-wide per-integration rate limiter.
+
+    This is the production wrapper expected by SPEC.md §5.5.2. A module-level
+    limiter ensures GitHub, Stripe, Gmail/IMAP, Linear, and future tools share
+    one semaphore set within the API process instead of each file creating an
+    independent limiter.
+    """
+    return await DEFAULT_RATE_LIMITER.integration_call(integration, fn, *args, **kwargs)

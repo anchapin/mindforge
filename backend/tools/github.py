@@ -8,6 +8,7 @@ from datetime import UTC
 import httpx
 
 from .base import BaseTool, ToolResult
+from .rate_limiter import integration_call
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +31,23 @@ class GitHubTool(BaseTool):  # type: ignore[override]
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
 
         async with httpx.AsyncClient(timeout=30.0) as client:
+
+            async def _get(url: str, **request_kwargs) -> httpx.Response:
+                return await integration_call(
+                    "github",
+                    client.get,
+                    url,
+                    **request_kwargs,
+                )
+
+            async def _post(url: str, **request_kwargs) -> httpx.Response:
+                return await integration_call(
+                    "github",
+                    client.post,
+                    url,
+                    **request_kwargs,
+                )
+
             try:
                 if action == "commits":
                     all_commits: list[dict] = []
@@ -41,7 +59,7 @@ class GitHubTool(BaseTool):  # type: ignore[override]
                         params["since"] = since
 
                     while page_url:
-                        resp = await client.get(page_url, headers=headers, params=params)
+                        resp = await _get(page_url, headers=headers, params=params)
 
                         # Handle HTTP errors (including 403 rate limit)
                         if resp.status_code == 403:
@@ -123,7 +141,7 @@ class GitHubTool(BaseTool):  # type: ignore[override]
                     )
 
                 elif action == "issues":
-                    resp = await client.get(
+                    resp = await _get(
                         f"https://api.github.com/repos/{repo}/issues",
                         headers=headers,
                         params={"state": "open", "per_page": 20},
@@ -139,7 +157,7 @@ class GitHubTool(BaseTool):  # type: ignore[override]
                     )
 
                 elif action == "create_issue":
-                    resp = await client.post(
+                    resp = await _post(
                         f"https://api.github.com/repos/{repo}/issues",
                         headers=headers,
                         json={"title": kwargs["title"], "body": kwargs.get("body", "")},
@@ -183,8 +201,11 @@ class GitHubTool(BaseTool):  # type: ignore[override]
     async def validate_auth(self) -> bool:
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                resp = await client.get(
-                    "https://api.github.com/user", headers={"Authorization": f"Bearer {''}"}
+                resp = await integration_call(
+                    "github",
+                    client.get,
+                    "https://api.github.com/user",
+                    headers={"Authorization": f"Bearer {''}"},
                 )
                 return resp.status_code == 200
             except Exception:

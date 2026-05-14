@@ -18,15 +18,12 @@ import time
 import httpx
 
 from ..base import BaseTool, ToolResult
-from ..rate_limiter import IntegrationRateLimiter
+from ..rate_limiter import integration_call
 
 logger = logging.getLogger(__name__)
 
 LINEAR_API_URL = "https://api.linear.app/graphql"
 LINEAR_HEADERS = {"Content-Type": "application/json"}
-
-# Shared limiter instance — imported by other modules for integration_call
-_limiter = IntegrationRateLimiter()
 
 
 class LinearTool(BaseTool):  # type: ignore[override]
@@ -44,10 +41,7 @@ class LinearTool(BaseTool):  # type: ignore[override]
 
         async def _call(payload: dict) -> dict:
             """Execute GraphQL call through the rate limiter."""
-            return await _limiter.integration_call(
-                "linear",
-                lambda: self._http_post(payload, headers),
-            )
+            return await integration_call("linear", self._http_post, payload, headers)
 
         try:
             if action == "list_issues":
@@ -86,7 +80,12 @@ class LinearTool(BaseTool):  # type: ignore[override]
                   }
                 }
                 """
-                variables: dict = {"limit": limit, "teamId": team_id, "state": state, "cursor": cursor}
+                variables: dict = {
+                    "limit": limit,
+                    "teamId": team_id,
+                    "state": state,
+                    "cursor": cursor,
+                }
 
                 data = await _call({"query": query, "variables": variables})
                 issues_data = data.get("data", {}).get("issues", {})
@@ -97,7 +96,17 @@ class LinearTool(BaseTool):  # type: ignore[override]
                 # Paginate through all pages
                 while page_info.get("hasNextPage") and page_info.get("endCursor"):
                     cursor = page_info["endCursor"]
-                    data = await _call({"query": query, "variables": {"limit": limit, "teamId": team_id, "state": state, "cursor": cursor}})
+                    data = await _call(
+                        {
+                            "query": query,
+                            "variables": {
+                                "limit": limit,
+                                "teamId": team_id,
+                                "state": state,
+                                "cursor": cursor,
+                            },
+                        }
+                    )
                     issues_data = data.get("data", {}).get("issues", {})
                     all_issues.extend(issues_data.get("nodes", []))
                     page_info = issues_data.get("pageInfo", {})
@@ -204,7 +213,10 @@ class LinearTool(BaseTool):  # type: ignore[override]
 
                 return ToolResult(
                     success=True,
-                    data={"success": True, "issue": self._normalize_issue(result_data.get("issue", {}))},
+                    data={
+                        "success": True,
+                        "issue": self._normalize_issue(result_data.get("issue", {})),
+                    },
                     latency_ms=(time.monotonic() - start) * 1000,
                 )
 
@@ -301,10 +313,15 @@ class LinearTool(BaseTool):  # type: ignore[override]
         """
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                resp = await client.post(
+                resp = await integration_call(
+                    "linear",
+                    client.post,
                     LINEAR_API_URL,
                     json={"query": query},
-                    headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
                 )
                 return resp.status_code == 200
             except Exception:

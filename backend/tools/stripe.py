@@ -8,6 +8,7 @@ import time
 import httpx
 
 from .base import BaseTool, ToolResult
+from .rate_limiter import integration_call
 
 logger = logging.getLogger(__name__)
 
@@ -24,9 +25,18 @@ class StripeTool(BaseTool):  # type: ignore[override]
         headers = {"Authorization": f"Bearer {api_key}"}
 
         async with httpx.AsyncClient(timeout=30.0) as client:
+
+            async def _get(url: str, **request_kwargs) -> httpx.Response:
+                return await integration_call(
+                    "stripe",
+                    client.get,
+                    url,
+                    **request_kwargs,
+                )
+
             try:
                 if action == "balance":
-                    resp = await client.get("https://api.stripe.com/v1/balance", headers=headers)
+                    resp = await _get("https://api.stripe.com/v1/balance", headers=headers)
                     data = resp.json()
                     return ToolResult(
                         success=True,
@@ -38,7 +48,7 @@ class StripeTool(BaseTool):  # type: ignore[override]
                     )
 
                 elif action == "charges":
-                    resp = await client.get(
+                    resp = await _get(
                         "https://api.stripe.com/v1/charges",
                         headers=headers,
                         params={"limit": kwargs.get("limit", 20)},
@@ -60,7 +70,7 @@ class StripeTool(BaseTool):  # type: ignore[override]
                     )
 
                 elif action == "customers":
-                    resp = await client.get(
+                    resp = await _get(
                         "https://api.stripe.com/v1/customers",
                         headers=headers,
                         params={"limit": kwargs.get("limit", 20)},
@@ -97,7 +107,9 @@ class StripeTool(BaseTool):  # type: ignore[override]
     async def validate_auth(self) -> bool:
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                resp = await client.get(
+                resp = await integration_call(
+                    "stripe",
+                    client.get,
                     "https://api.stripe.com/v1/balance",
                     headers={"Authorization": "Bearer sk_test_placeholder"},
                 )

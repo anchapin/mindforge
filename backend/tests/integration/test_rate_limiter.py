@@ -11,6 +11,7 @@ Run: pytest backend/tests/integration/test_rate_limiter.py -v
 import asyncio
 import os
 import pathlib
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -148,3 +149,150 @@ class TestIntegrationRateLimiter:
 
         result = await limiter.integration_call("test", mock_fn)
         assert result == "result_value"
+
+
+class TestToolRateLimiterWiring:
+    """Verify production tools route outbound calls through shared integration_call."""
+
+    @pytest.mark.asyncio
+    async def test_module_level_integration_call_uses_shared_limiter(self):
+        """SPEC §5.5.2 expects a process-wide integration_call wrapper."""
+        from backend.tools import rate_limiter
+
+        calls: list[tuple[str, tuple, dict]] = []
+        original = rate_limiter.DEFAULT_RATE_LIMITER.integration_call
+
+        async def tracking_call(integration: str, fn, *args, **kwargs):
+            calls.append((integration, args, kwargs))
+            return await fn(*args, **kwargs)
+
+        rate_limiter.DEFAULT_RATE_LIMITER.integration_call = tracking_call  # type: ignore[method-assign]
+        try:
+
+            async def sample(value: str) -> str:
+                return f"ok:{value}"
+
+            result = await rate_limiter.integration_call("github", sample, "test")
+        finally:
+            rate_limiter.DEFAULT_RATE_LIMITER.integration_call = original  # type: ignore[method-assign]
+
+        assert result == "ok:test"
+        assert calls == [("github", ("test",), {})]
+
+    @pytest.mark.asyncio
+    async def test_github_tool_routes_api_calls_through_rate_limiter(self):
+        from backend.tools.github import GitHubTool
+
+        calls: list[str] = []
+
+        async def tracking_call(integration: str, fn, *args, **kwargs):
+            calls.append(integration)
+            return await fn(*args, **kwargs)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = [
+            {
+                "sha": "abc1234abcd",
+                "commit": {
+                    "message": "Commit through limiter",
+                    "author": {"name": "Alex", "date": "2026-05-01T00:00:00Z"},
+                },
+            }
+        ]
+        mock_resp.headers = {}
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with (
+            patch("backend.tools.github.integration_call", side_effect=tracking_call),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            result = await GitHubTool().execute(
+                action="commits", token="ghp_test", repo="test/repo"
+            )
+
+        assert result.success is True
+        assert calls == ["github"]
+
+    @pytest.mark.asyncio
+    async def test_stripe_tool_routes_api_calls_through_rate_limiter(self):
+        from backend.tools.stripe import StripeTool
+
+        calls: list[str] = []
+
+        async def tracking_call(integration: str, fn, *args, **kwargs):
+            calls.append(integration)
+            return await fn(*args, **kwargs)
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "available": [{"amount": 1000}],
+            "pending": [{"amount": 250}],
+        }
+
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        with (
+            patch("backend.tools.stripe.integration_call", side_effect=tracking_call),
+            patch("httpx.AsyncClient", return_value=mock_client),
+        ):
+            result = await StripeTool().execute(action="balance", api_key="sk_test")
+
+        assert result.success is True
+        assert calls == ["stripe"]
+
+    @pytest.mark.asyncio
+    async def test_email_fetch_tool_routes_imap_work_through_gmail_rate_limiter(self):
+        from backend.tools.base import ToolResult
+        from backend.tools.email_fetch import EmailFetchTool
+
+        calls: list[str] = []
+
+        async def tracking_call(integration: str, fn, *args, **kwargs):
+            calls.append(integration)
+            return ToolResult(success=True, data={"emails": []}, latency_ms=0)
+
+        with patch("backend.tools.email_fetch.integration_call", side_effect=tracking_call):
+            result = await EmailFetchTool().execute(
+                action="recent",
+                host="imap.gmail.com",
+                username="user@example.com",
+                password="app-password",
+            )
+
+        assert result.success is True
+        assert calls == ["gmail"]
+
+    @pytest.mark.asyncio
+    async def test_linear_tool_uses_shared_rate_limiter_wrapper(self):
+        from backend.tools.integrations.linear import LinearTool
+
+        calls: list[str] = []
+
+        async def tracking_call(integration: str, fn, *args, **kwargs):
+            calls.append(integration)
+            return {
+                "data": {
+                    "issue": {
+                        "id": "lin_123",
+                        "identifier": "MF-1",
+                        "title": "Linear through limiter",
+                    }
+                }
+            }
+
+        with patch("backend.tools.integrations.linear.integration_call", side_effect=tracking_call):
+            result = await LinearTool().execute(
+                action="get_issue", api_key="lin_test", issue_id="lin_123"
+            )
+
+        assert result.success is True
+        assert calls == ["linear"]

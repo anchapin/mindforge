@@ -9,6 +9,7 @@ import time
 from email.header import decode_header
 
 from .base import BaseTool, ToolResult
+from .rate_limiter import integration_call
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,10 @@ class EmailFetchTool(BaseTool):  # type: ignore[override]
                     success=False, error=str(exc), latency_ms=(time.monotonic() - start) * 1000
                 )
 
-        return await asyncio.get_event_loop().run_in_executor(None, _sync_fetch)
+        async def _run_sync_fetch() -> ToolResult:
+            return await asyncio.get_event_loop().run_in_executor(None, _sync_fetch)
+
+        return await integration_call("gmail", _run_sync_fetch)
 
     async def validate_auth(self) -> bool:
         return True  # IMAP auth is validated on connect
