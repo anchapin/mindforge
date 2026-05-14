@@ -138,9 +138,7 @@ async def run_skill(
     await ws.send_task_created(task_id, skill_name=skill.name)
     await ws.send_skill_triggered(skill_id, task_id)
 
-    asyncio.create_task(
-        _run_skill_task(task_id, skill_id, skill.agent_role, payload.project_id)
-    )
+    asyncio.create_task(_run_skill_task(task_id, skill_id, skill.agent_role, payload.project_id))
 
     row = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
     return _row_to_task(row)
@@ -197,11 +195,11 @@ async def _run_skill_task(
         ctx = {"skill_id": skill_id, "skill_result": result_dict}
 
         _update_task_status(task_id, final_status, ctx)
-        await ws.send_task_completed(task_id, agent_role, result.final_output or {})
+        await ws.send_task_completed(task_id, result.final_output or {})
 
     except Exception as exc:
         _update_task_status(task_id, "failed", {"error": str(exc)})
-        await ws.send_task_failed(task_id, agent_role, str(exc))
+        await ws.send_task_failed(task_id, str(exc), False)
 
 
 def _update_task_status(task_id: str, status: str, context: dict) -> None:

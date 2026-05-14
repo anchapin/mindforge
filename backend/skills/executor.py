@@ -193,9 +193,7 @@ async def execute_skill(
         nodes_completed=[],
         started_at=datetime.utcnow(),
     )
-    ctx._ws_manager = _ws_manager
-
-    return await _execute_dag(ctx, graph, llm_complete, tools)
+    return await _execute_dag(ctx, graph, llm_complete, tools, ws_manager=_ws_manager)
 
 
 async def _execute_dag(
@@ -203,6 +201,7 @@ async def _execute_dag(
     graph: ExecutionGraph,
     llm_complete: Any,
     tools: Any,
+    ws_manager: Any = None,
 ) -> SkillResult:
     """Internal DAG executor — walks edges, handles condition evaluation."""
     node_map: dict[str, SkillNode] = {n.id: n for n in graph.nodes}
@@ -222,7 +221,7 @@ async def _execute_dag(
         # Check approval requirement BEFORE executing
         if node.requires_approval:
             # Pause and return draft state
-            ws = ctx._ws_manager
+            ws = ws_manager
             if ws is None:
                 from backend.api.deps import get_ws_manager as _get_ws
                 ws = _get_ws()

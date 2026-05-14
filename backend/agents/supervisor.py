@@ -11,6 +11,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal
 
 from langgraph.checkpoint.memory import MemorySaver
@@ -166,6 +167,21 @@ async def specialist_node(
             state.agent_role,
             agent_result.get("summary", ""),
         )
+
+        if agent_result.get("clarification_needed"):
+            from backend.api.websocket import ws_manager
+
+            deadline_iso = (datetime.now(UTC) + timedelta(hours=24)).isoformat()
+            await ws_manager.send_clarification_request(
+                task_id=state.task_id,
+                node_id=f"{state.agent_role}_clarification",
+                question=str(
+                    agent_result.get("question") or "Please clarify how I should proceed."
+                ),
+                options=list(agent_result.get("options") or []),
+                context_summary=str(agent_result.get("context_summary") or memory_context),
+                deadline_iso=deadline_iso,
+            )
 
         return state.model_copy(
             update={

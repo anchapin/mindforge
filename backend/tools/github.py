@@ -34,7 +34,7 @@ class GitHubTool(BaseTool):  # type: ignore[override]
                 if action == "commits":
                     all_commits: list[dict] = []
                     base_url = f"https://api.github.com/repos/{repo}/commits"
-                    page_url = base_url
+                    page_url: str | None = base_url
                     params: dict = {"per_page": 100}
                     since = kwargs.get("since")
                     if since:
@@ -77,10 +77,10 @@ class GitHubTool(BaseTool):  # type: ignore[override]
                                 part = part.strip()
                                 if 'rel="next"' in part:
                                     # Extract URL from <URL> — may be relative or absolute
-                                    start = part.find("<")
-                                    end = part.find(">")
-                                    if start != -1 and end != -1:
-                                        raw_url = part[start + 1 : end]
+                                    url_start = part.find("<")
+                                    url_end = part.find(">")
+                                    if url_start != -1 and url_end != -1:
+                                        raw_url = part[url_start + 1 : url_end]
                                         # Resolve relative URL against base (GitHub uses relative next links)
                                         if raw_url.startswith("/"):
                                             # Relative — append to base path
@@ -104,7 +104,11 @@ class GitHubTool(BaseTool):  # type: ignore[override]
                             oldest_date = oldest["commit"]["author"]["date"]
                             if oldest_date < f"{since}T00:00:00Z":
                                 # Filter out commits older than since
-                                filtered = [c for c in page_commits if c["commit"]["author"]["date"] >= f"{since}T00:00:00Z"]
+                                filtered = [
+                                    c
+                                    for c in page_commits
+                                    if c["commit"]["author"]["date"] >= f"{since}T00:00:00Z"
+                                ]
                                 all_commits.extend(self._normalize_commit(c) for c in filtered)
                                 break
 
