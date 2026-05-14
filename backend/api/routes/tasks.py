@@ -19,7 +19,6 @@ from ...agents.supervisor import SupervisorRunner
 from ...memory.episodic import EpisodicMemory
 from ...memory.store import SharedMemoryStore
 from ...skills.trigger import trigger_skill
-from ...skills.executor import execute_skill
 from ..deps import DB_PATH, db_dep, get_ws_manager, memory_dep
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
