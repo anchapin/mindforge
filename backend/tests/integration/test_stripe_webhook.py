@@ -79,20 +79,19 @@ class TestStripeWebhookSignatureValidation:
         mock_request.body = AsyncMock(return_value=payload)
         mock_request.headers = {"stripe-signature": signature}
 
-        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}):
-            with patch("backend.api.routes.webhooks.get_ws_manager") as mock_ws_fn:
-                mock_ws_fn.return_value = MagicMock()
-                with patch("backend.api.routes.webhooks._log_to_episodic"):
-                    import asyncio
+        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}), \
+             patch("backend.api.routes.webhooks.get_ws_manager") as mock_ws_fn, \
+             patch("backend.api.routes.webhooks._log_to_episodic"):
+            mock_ws_fn.return_value = MagicMock()
+            import asyncio
 
-                    async def run():
-                        from backend.api.routes.webhooks import stripe_webhook
+            async def run():
+                from backend.api.routes.webhooks import stripe_webhook
 
-                        return await stripe_webhook(mock_request)
+                return await stripe_webhook(mock_request)
 
-                    result = asyncio.get_event_loop().run_until_complete(run())
-
-        assert result == {"received": True, "anomaly_detected": False}
+            result = asyncio.get_event_loop().run_until_complete(run())
+            assert result == {"received": True, "anomaly_detected": False}
 
     def test_tampered_payload_returns_400(self):
         """RED: Tampered payload → HTTP 400 "Invalid signature".
@@ -108,21 +107,21 @@ class TestStripeWebhookSignatureValidation:
         mock_request.body = AsyncMock(return_value=tampered_payload)
         mock_request.headers = {"stripe-signature": signature}
 
-        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}):
-            with patch("backend.api.routes.webhooks._log_to_episodic"):
-                import asyncio
+        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}), \
+             patch("backend.api.routes.webhooks._log_to_episodic"):
+            import asyncio
 
-                async def run():
-                    from backend.api.routes.webhooks import stripe_webhook
+            async def run():
+                from backend.api.routes.webhooks import stripe_webhook
 
-                    return await stripe_webhook(mock_request)
+                return await stripe_webhook(mock_request)
 
-                try:
-                    asyncio.get_event_loop().run_until_complete(run())
-                    raise AssertionError("Expected HTTPException(400)")
-                except Exception as exc:
-                    # Could be HTTPException or the exception propagated through
-                    pass
+            try:
+                asyncio.get_event_loop().run_until_complete(run())
+                raise AssertionError("Expected HTTPException(400)")
+            except Exception as exc:
+                # Could be HTTPException or the exception propagated through
+                pass
 
     def test_missing_signature_header_returns_400(self):
         """RED: Missing stripe-signature header → HTTP 400.
@@ -135,20 +134,20 @@ class TestStripeWebhookSignatureValidation:
         mock_request.body = AsyncMock(return_value=payload)
         mock_request.headers = {}  # No stripe-signature
 
-        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "whsec_test_secret"}):
-            with patch("backend.api.routes.webhooks._log_to_episodic"):
-                import asyncio
+        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "whsec_test_secret"}), \
+             patch("backend.api.routes.webhooks._log_to_episodic"):
+            import asyncio
 
-                async def run():
-                    from backend.api.routes.webhooks import stripe_webhook
+            async def run():
+                from backend.api.routes.webhooks import stripe_webhook
 
-                    return await stripe_webhook(mock_request)
+                return await stripe_webhook(mock_request)
 
-                try:
-                    asyncio.get_event_loop().run_until_complete(run())
-                    raise AssertionError("Expected HTTPException(400)")
-                except Exception:
-                    pass
+            try:
+                asyncio.get_event_loop().run_until_complete(run())
+                raise AssertionError("Expected HTTPException(400)")
+            except Exception:
+                pass
 
     def test_bad_secret_returns_400(self):
         """RED: Secret mismatch → HTTP 400.
@@ -163,20 +162,20 @@ class TestStripeWebhookSignatureValidation:
         mock_request.body = AsyncMock(return_value=payload)
         mock_request.headers = {"stripe-signature": signature}
 
-        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "correct_secret"}):
-            with patch("backend.api.routes.webhooks._log_to_episodic"):
-                import asyncio
+        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "correct_secret"}), \
+             patch("backend.api.routes.webhooks._log_to_episodic"):
+            import asyncio
 
-                async def run():
-                    from backend.api.routes.webhooks import stripe_webhook
+            async def run():
+                from backend.api.routes.webhooks import stripe_webhook
 
-                    return await stripe_webhook(mock_request)
+                return await stripe_webhook(mock_request)
 
-                try:
-                    asyncio.get_event_loop().run_until_complete(run())
-                    raise AssertionError("Expected HTTPException(400)")
-                except Exception:
-                    pass
+            try:
+                asyncio.get_event_loop().run_until_complete(run())
+                raise AssertionError("Expected HTTPException(400)")
+            except Exception:
+                pass
 
 
 class TestStripeWebhookBillingAnomaly:
@@ -204,18 +203,17 @@ class TestStripeWebhookBillingAnomaly:
 
         with patch.dict(
             os.environ, {"STRIPE_WEBHOOK_SECRET": secret, "BILLING_ALERT_THRESHOLD_USD": "100"}
-        ):
-            with patch("backend.api.routes.webhooks._log_to_episodic"):
-                with patch("backend.api.routes.webhooks._get_task_db", return_value=mock_db):
-                    with patch("backend.api.routes.webhooks.get_ws_manager", return_value=mock_ws):
-                        import asyncio
+        ), patch("backend.api.routes.webhooks._log_to_episodic"), \
+             patch("backend.api.routes.webhooks._get_task_db", return_value=mock_db), \
+             patch("backend.api.routes.webhooks.get_ws_manager", return_value=mock_ws):
+            import asyncio
 
-                        async def run():
-                            from backend.api.routes.webhooks import stripe_webhook
+            async def run():
+                from backend.api.routes.webhooks import stripe_webhook
 
-                            return await stripe_webhook(mock_request)
+                return await stripe_webhook(mock_request)
 
-                        result = asyncio.get_event_loop().run_until_complete(run())
+            result = asyncio.get_event_loop().run_until_complete(run())
 
         assert result.get("anomaly_detected") is True
         assert mock_ws.send_draft_ready.called
@@ -244,18 +242,17 @@ class TestStripeWebhookBillingAnomaly:
 
         with patch.dict(
             os.environ, {"STRIPE_WEBHOOK_SECRET": secret, "BILLING_ALERT_THRESHOLD_USD": "100"}
-        ):
-            with patch("backend.api.routes.webhooks._log_to_episodic") as mock_log:
-                with patch("backend.api.routes.webhooks._get_task_db", return_value=mock_db):
-                    with patch("backend.api.routes.webhooks.get_ws_manager", return_value=mock_ws):
-                        import asyncio
+        ), patch("backend.api.routes.webhooks._log_to_episodic") as mock_log, \
+             patch("backend.api.routes.webhooks._get_task_db", return_value=mock_db), \
+             patch("backend.api.routes.webhooks.get_ws_manager", return_value=mock_ws):
+            import asyncio
 
-                        async def run():
-                            from backend.api.routes.webhooks import stripe_webhook
+            async def run():
+                from backend.api.routes.webhooks import stripe_webhook
 
-                            return await stripe_webhook(mock_request)
+                return await stripe_webhook(mock_request)
 
-                        result = asyncio.get_event_loop().run_until_complete(run())
+            result = asyncio.get_event_loop().run_until_complete(run())
 
         assert result.get("anomaly_detected") is False
         assert not mock_ws.send_draft_ready.called
@@ -278,17 +275,17 @@ class TestStripeWebhookEpisodicLogging:
         mock_request.body = AsyncMock(return_value=payload)
         mock_request.headers = {"stripe-signature": signature}
 
-        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}):
-            with patch("backend.api.routes.webhooks._log_to_episodic") as mock_log:
-                with patch("backend.api.routes.webhooks.get_ws_manager", return_value=MagicMock()):
-                    import asyncio
+        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": secret}), \
+             patch("backend.api.routes.webhooks._log_to_episodic") as mock_log, \
+             patch("backend.api.routes.webhooks.get_ws_manager", return_value=MagicMock()):
+            import asyncio
 
-                    async def run():
-                        from backend.api.routes.webhooks import stripe_webhook
+            async def run():
+                from backend.api.routes.webhooks import stripe_webhook
 
-                        return await stripe_webhook(mock_request)
+                return await stripe_webhook(mock_request)
 
-                    result = asyncio.get_event_loop().run_until_complete(run())
+            result = asyncio.get_event_loop().run_until_complete(run())
 
         assert mock_log.called
         call_kwargs = mock_log.call_args.kwargs
@@ -308,19 +305,19 @@ class TestStripeWebhookEpisodicLogging:
         mock_request.body = AsyncMock(return_value=payload)
         mock_request.headers = {"stripe-signature": signature}
 
-        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "correct_secret"}):
-            with patch("backend.api.routes.webhooks._log_to_episodic") as mock_log:
-                import asyncio
+        with patch.dict(os.environ, {"STRIPE_WEBHOOK_SECRET": "correct_secret"}), \
+             patch("backend.api.routes.webhooks._log_to_episodic") as mock_log:
+            import asyncio
 
-                async def run():
-                    from backend.api.routes.webhooks import stripe_webhook
+            async def run():
+                from backend.api.routes.webhooks import stripe_webhook
 
-                    return await stripe_webhook(mock_request)
+                return await stripe_webhook(mock_request)
 
-                try:
-                    asyncio.get_event_loop().run_until_complete(run())
-                except Exception:
-                    pass
+            try:
+                asyncio.get_event_loop().run_until_complete(run())
+            except Exception:
+                pass
 
         # _log_to_episodic should NOT have been called (early return)
         assert not mock_log.called
