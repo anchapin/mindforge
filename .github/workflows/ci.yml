@@ -60,15 +60,12 @@ jobs:
       - name: Run tests
         run: |
           # Wrap entire test sequence in a timeout so a hang doesn't block docker compose down
-          # If pytest hangs (e.g. LangGraph async deadlock), timeout kills it after 5 min
+          # If pytest hangs (LangGraph async deadlock), timeout kills it after 5 min and
+          # the non-zero exit code correctly fails the job.
           timeout 300 bash -c '
-            pytest backend/tests/unit -q --tb=short || true
-            pytest backend/tests/integration -q --tb=short || true
+            pytest backend/tests/unit -q --tb=short
+            pytest backend/tests/integration -q --tb=short
           '
-          EXIT_CODE=$?
-          # exit 0 even if tests failed — we handle teardown below, don't let a test
-          # failure prevent docker compose down from running
-          echo "Tests finished with exit code $EXIT_CODE"
 
       - name: Stop services
         if: always()
