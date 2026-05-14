@@ -36,8 +36,11 @@ jobs:
           LOG_LEVEL=INFO
           EOF
           touch .env.local
-      - run: docker compose --profile test up -d
-      - run: |
+      - name: Start test services
+        run: docker compose --profile test up -d
+
+      - name: Wait for chroma to be healthy
+        run: |
           # Poll until chroma is healthy (up to 120s)
           for i in $(seq 1 24); do
             if docker exec $(docker compose ps -q chroma 2>/dev/null) \
@@ -53,8 +56,15 @@ jobs:
             sleep 5
           done
           echo "Services ready — running tests"
-      - run: pytest backend/tests/unit -q --tb=short
-      - run: pytest backend/tests/integration -q --tb=short
+
+      - name: Run tests
+        run: |
+          pytest backend/tests/unit -q --tb=short
+          pytest backend/tests/integration -q --tb=short
+
+      - name: Stop services
+        if: always()
+        run: docker compose --profile test down --timeout 30 --remove-orphans || true
 
   build-images:
     runs-on: ubuntu-latest
