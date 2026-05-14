@@ -175,7 +175,15 @@ class SemanticMemory:
 
         for c in chunks:
             record_id = str(uuid.uuid4())
-            sig = self._sign(c["text"], extra_meta)
+
+            # HMAC signs only the 3 core identity fields — not extra_meta —
+            # so that retrieval (which reconstructs only those 3 fields) can verify.
+            signed_meta = {
+                "project_id": project_id,
+                "task_id": task_id,
+                "agent_role": agent_role,
+            }
+            sig = self._sign(c["text"], signed_meta)
 
             # Embed via Ollama
             embeds = await embed_texts([c["text"]])
