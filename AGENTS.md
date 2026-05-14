@@ -120,6 +120,7 @@ A valid skill YAML:
 | `CHROMA_HOST` | Auto | Vector store |
 | `TEMPORAL_HOST` | Auto | Workflow engine |
 | `OLLAMA_BASE_URL` | No | Local inference (optional) |
+| `ENABLE_TEMPORAL` | No | Activate Temporal proactive engine (Phase 3, default `false`) |
 
 ## Contact
 

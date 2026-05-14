@@ -44,9 +44,11 @@ async def lifespan(app: FastAPI):
     except Exception as exc:
         logger.warning("llm_router_init_failed", exc=str(exc))
 
-    # Initialize Temporal (Phase 3)
+    # Initialize Temporal (Phase 3 — gated by ENABLE_TEMPORAL env var; stays in
+    # stub mode when disabled so the rest of the API still serves requests).
     try:
         app.state.temporal = TemporalClient()
+        await app.state.temporal.start()
     except Exception as exc:
         logger.warning("temporal_client_init_failed", exc=str(exc))
 

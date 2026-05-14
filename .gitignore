@@ -42,3 +42,6 @@ htmlcov/
 
 # Temporal
 temporal_data/
+
+# Serena MCP local cache
+.serena/
