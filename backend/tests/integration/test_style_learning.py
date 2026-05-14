@@ -13,7 +13,7 @@ import pathlib
 import sqlite3
 import tempfile
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -76,7 +76,17 @@ async def _make_draft_task(task_id: str, skill_id: str, context_json: str) -> No
     now = "2026-01-01T00:00:00"
     conn.execute(
         "INSERT INTO tasks (id, skill_id, status, task_type, project_id, description, context, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (task_id, skill_id, "draft", "skill", None, "subscription refund request", context_json, now, now),
+        (
+            task_id,
+            skill_id,
+            "draft",
+            "skill",
+            None,
+            "subscription refund request",
+            context_json,
+            now,
+            now,
+        ),
     )
     conn.commit()
     conn.close()
@@ -118,17 +128,21 @@ class TestStyleLearning:
                         "output": {"text": "The refund has been approved."},
                     },
                 },
+                "final_output": {"text": "The refund has been processed."},
             },
-            "current_node": "negotiate",
         }
 
         await _make_draft_task(task_id, "subscription-refund", json.dumps(draft_context))
 
         update_style_calls = []
 
-        async def mock_execute_skill_continue(ctx, approval_action, edited_content=None, llm_complete=None, tools=None):
-            from backend.skills.models import SkillResult
+        async def mock_execute_skill_continue(
+            ctx, approval_action, edited_content=None, llm_complete=None, tools=None
+        ):
             from datetime import datetime
+
+            from backend.skills.models import SkillResult
+
             return SkillResult(
                 skill_id="subscription-refund",
                 skill_version=1,
@@ -170,7 +184,9 @@ class TestStyleLearning:
             from backend.api.routes.tasks import ApprovalRequest
 
             # User edited the draft before approving
-            edited_draft = {"text": "Hey team,\n\nI'm reaching out about a refund. Can we sort this out quickly? Cheers!"}
+            edited_draft = {
+                "text": "Hey team,\n\nI'm reaching out about a refund. Can we sort this out quickly? Cheers!"
+            }
             payload = ApprovalRequest(edited_content=edited_draft)
 
             test_conn = sqlite3.connect(_test_db_path)
@@ -188,7 +204,9 @@ class TestStyleLearning:
         )
         extracted = update_style_calls[0]
         assert extracted["tone"] == "casual", f"Expected tone='casual', got {extracted.get('tone')}"
-        assert extracted["greeting_style"] == "Hey team,", f"Expected greeting_style='Hey team,', got {extracted.get('greeting_style')}"
+        assert extracted["greeting_style"] == "Hey team,", (
+            f"Expected greeting_style='Hey team,', got {extracted.get('greeting_style')}"
+        )
 
     @pytest.mark.asyncio
     async def test_approve_without_edits_extracts_style_from_draft(self):
@@ -215,7 +233,9 @@ class TestStyleLearning:
                     "verify": {"status": "success", "output": {"text": "verified"}},
                     "draft": {
                         "status": "waiting_approval",
-                        "output": {"text": "Hi team,\n\nI am requesting a refund for my subscription. Please advise."},
+                        "output": {
+                            "text": "Hi team,\n\nI am requesting a refund for my subscription. Please advise."
+                        },
                     },
                     "negotiate": {
                         "status": "completed",
@@ -223,16 +243,19 @@ class TestStyleLearning:
                     },
                 },
             },
-            "current_node": "negotiate",
         }
 
         await _make_draft_task(task_id, "subscription-refund", json.dumps(draft_context))
 
         update_style_calls = []
 
-        async def mock_execute_skill_continue(ctx, approval_action, edited_content=None, llm_complete=None, tools=None):
-            from backend.skills.models import SkillResult
+        async def mock_execute_skill_continue(
+            ctx, approval_action, edited_content=None, llm_complete=None, tools=None
+        ):
             from datetime import datetime
+
+            from backend.skills.models import SkillResult
+
             return SkillResult(
                 skill_id="subscription-refund",
                 skill_version=1,
@@ -301,20 +324,31 @@ class TestStyleLearning:
         content = "Hi team,\n\nI'm asking for a refund. Can you help? Cheers!"
 
         async def mock_llm(prompt, system="", agent_role=None):
-            return json.dumps({
-                "tone": "casual",
-                "sentence_length": "short",
-                "first_person": "I",
-                "signature_phrases": ["cheers"],
-                "greeting_style": "Hi team,",
-                "signoff_style": "Cheers",
-            })
+            return json.dumps(
+                {
+                    "tone": "casual",
+                    "sentence_length": "short",
+                    "first_person": "I",
+                    "signature_phrases": ["cheers"],
+                    "greeting_style": "Hi team,",
+                    "signoff_style": "Cheers",
+                }
+            )
 
         result = await extract_style_fields(content, mock_llm)
 
         assert isinstance(result, dict), f"Expected dict, got {type(result)}"
-        assert all(k in result for k in ("tone", "sentence_length", "first_person",
-                                          "signature_phrases", "greeting_style", "signoff_style"))
+        assert all(
+            k in result
+            for k in (
+                "tone",
+                "sentence_length",
+                "first_person",
+                "signature_phrases",
+                "greeting_style",
+                "signoff_style",
+            )
+        )
         assert result["tone"] == "casual"
         assert result["signature_phrases"] == ["cheers"]
 

@@ -20,13 +20,15 @@ logger = logging.getLogger(__name__)
 # Data model
 # ---------------------------------------------------------------------------------------
 
+
 @dataclass
 class WritingProfile:
     """Structured writing style profile for a single-user installation."""
+
     id: str
-    tone: str = "semi-formal"           # "formal" | "semi-formal" | "casual" | "friendly"
-    sentence_length: str = "medium"     # "short" | "medium" | "long"
-    first_person: str = "I"             # "I" | "we" | "they" | "mixed"
+    tone: str = "semi-formal"  # "formal" | "semi-formal" | "casual" | "friendly"
+    sentence_length: str = "medium"  # "short" | "medium" | "long"
+    first_person: str = "I"  # "I" | "we" | "they" | "mixed"
     signature_phrases: list[str] = field(default_factory=list)
     greeting_style: str = "Hi [Name],"
     signoff_style: str = "Cheers"
@@ -102,7 +104,7 @@ async def extract_style_fields(content: str, llm_complete) -> dict[str, Any]:
     # Strip markdown code block wrappers if present
     if text.startswith("```"):
         text = text.split("```", 2)[1]
-        text = text.lstrip("json").lstrip("\n").rstrip("```").strip()
+        text = text.lstrip("json").lstrip("\n").rstrip("```")  # noqa: B005
 
     try:
         parsed = json.loads(text)
@@ -205,8 +207,12 @@ class WritingProfileStore:
     def update_style(self, updates: dict[str, Any]) -> WritingProfile:
         """Update style fields from a dict (partial update supported)."""
         valid_fields = {
-            "tone", "sentence_length", "first_person",
-            "signature_phrases", "greeting_style", "signoff_style",
+            "tone",
+            "sentence_length",
+            "first_person",
+            "signature_phrases",
+            "greeting_style",
+            "signoff_style",
         }
         filtered = {k: v for k, v in updates.items() if k in valid_fields}
 
