@@ -305,9 +305,7 @@ async def approve_task(task_id: str, payload: ApprovalRequest, db=Depends(db_dep
         registry = get_registry()
         skill = registry.get(exec_ctx_raw["skill_id"])
         if skill is None:
-            raise HTTPException(
-                status_code=400, detail=f"Skill not found: {exec_ctx_raw['skill_id']}"
-            )
+            raise HTTPException(status_code=400, detail=f"Skill not found: {exec_ctx_raw['skill_id']}")
 
         # Reconstruct SkillExecutionContext from persisted state
         skill_ctx = SkillExecutionContext(
@@ -347,13 +345,8 @@ async def approve_task(task_id: str, payload: ApprovalRequest, db=Depends(db_dep
 
         db.execute(
             "UPDATE tasks SET status = ?, updated_at = ?, context = ?, completed_at = ? WHERE id = ?",
-            (
-                final_status,
-                datetime.utcnow().isoformat(),
-                json.dumps(ctx),
-                datetime.utcnow().isoformat() if final_status == "completed" else None,
-                task_id,
-            ),
+(final_status, datetime.utcnow().isoformat(), json.dumps(ctx),
+             datetime.utcnow().isoformat() if final_status == "completed" else None, task_id),
         )
         db.commit()
 
@@ -364,9 +357,7 @@ async def approve_task(task_id: str, payload: ApprovalRequest, db=Depends(db_dep
             style_store = WritingProfileStore()
             # Use edited content if provided, otherwise extract from draft scratch
             if payload.edited_content:
-                content = payload.edited_content.get("text", "") or payload.edited_content.get(
-                    "content", ""
-                )
+                content = payload.edited_content.get("text", "") or payload.edited_content.get("content", "")
             else:
                 draft_node = skill_ctx.scratch.get("draft", {})
                 output = draft_node.get("output", {})

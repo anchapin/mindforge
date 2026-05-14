@@ -36,7 +36,8 @@ class IntegrationRateLimiter:
     def __init__(self, limits: dict[str, int] | None = None) -> None:
         self._limits = limits or INTEGRATION_LIMITS
         self._semaphores: dict[str, asyncio.Semaphore] = {
-            key: asyncio.Semaphore(limit) for key, limit in self._limits.items()
+            key: asyncio.Semaphore(limit)
+            for key, limit in self._limits.items()
         }
         # Ensure _default always exists
         if "_default" not in self._semaphores:
