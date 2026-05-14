@@ -1,4 +1,4 @@
-.PHONY: help setup dev test lint fmt clean logs
+.PHONY: help setup dev test lint fmt clean logs docker-up docker-down migrate
 
 help:
 	@grep -E '^[a-zA-Z_-]+:' Makefile | sed 's/:.*//'
@@ -31,6 +31,15 @@ fmt:  ## Format code
 
 logs:  ## Tail backend logs
 	docker compose logs -f backend
+
+docker-up:  ## Start all Docker containers
+	docker compose up -d
+
+docker-down:  ## Stop all Docker containers
+	docker compose down
+
+migrate:  ## Run PGLite migrations (Alembic)
+	docker compose run --rm backend alembic upgrade head
 
 clean:  ## Remove containers + volumes
 	docker compose down -v --remove-orphans
