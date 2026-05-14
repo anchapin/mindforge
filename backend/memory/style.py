@@ -60,6 +60,86 @@ class WritingProfile:
 # Store
 # ---------------------------------------------------------------------------------------
 
+STYLE_EXTRACTION_PROMPT = """You are a writing style analyzer. Given the following text, extract the writing style characteristics.
+
+Return a JSON object with exactly these fields:
+- "tone": one of "formal", "semi-formal", "casual", "friendly"
+- "sentence_length": one of "short" (under 15 words), "medium" (15-25 words), "long" (over 25 words)
+- "first_person": one of "I", "we", "they", "mixed"
+- "signature_phrases": list of characteristic phrases (e.g. ["cheers", "all the best"])
+- "greeting_style": the greeting pattern (e.g. "Hi [Name],", "Hey team,")
+- "signoff_style": the sign-off pattern (e.g. "Cheers", "Best", "Thanks")
+
+Text to analyze:
+{content}
+
+Return only the JSON object, no markdown or explanation."""
+
+
+async def extract_style_fields(content: str, llm_complete) -> dict[str, Any]:
+    """Extract WritingProfile fields from content using an LLM.
+
+    Args:
+        content: The approved draft text (either user-edited or original draft output).
+        llm_complete: Async LLM callable with signature (prompt, system, agent_role) -> str.
+
+    Returns:
+        Dict with all WritingProfile fields: tone, sentence_length, first_person,
+        signature_phrases, greeting_style, signoff_style.
+    """
+    if not content or not content.strip():
+        return {}
+
+    prompt = STYLE_EXTRACTION_PROMPT.format(content=content[:3000])  # cap at 3000 chars
+
+    try:
+        response = await llm_complete(prompt, system="", agent_role=None)
+    except Exception:
+        return {}
+
+    # Try to extract JSON from response (may be wrapped in markdown code blocks)
+    text = response.strip()
+    # Strip markdown code block wrappers if present
+    if text.startswith("```"):
+        text = text.split("```", 2)[1]
+        text = text.lstrip("json").lstrip("\n").rstrip("```").strip()
+
+    try:
+        parsed = json.loads(text)
+    except Exception:
+        return {}
+
+    # Validate and normalize the returned fields
+    valid_tones = {"formal", "semi-formal", "casual", "friendly"}
+    valid_lengths = {"short", "medium", "long"}
+    valid_first_person = {"I", "we", "they", "mixed"}
+
+    result = {}
+    if "tone" in parsed and parsed["tone"] in valid_tones:
+        result["tone"] = parsed["tone"]
+    if "sentence_length" in parsed and parsed["sentence_length"] in valid_lengths:
+        result["sentence_length"] = parsed["sentence_length"]
+    if "first_person" in parsed and parsed["first_person"] in valid_first_person:
+        result["first_person"] = parsed["first_person"]
+    if "signature_phrases" in parsed and isinstance(parsed["signature_phrases"], list):
+        result["signature_phrases"] = parsed["signature_phrases"]
+    if "greeting_style" in parsed and isinstance(parsed["greeting_style"], str):
+        result["greeting_style"] = parsed["greeting_style"]
+    if "signoff_style" in parsed and isinstance(parsed["signoff_style"], str):
+        result["signoff_style"] = parsed["signoff_style"]
+
+    return result
+
+
+def _get_draft_content(skill_ctx) -> str:
+    """Extract the draft text from skill execution context scratch."""
+    draft_node = skill_ctx.scratch.get("draft", {})
+    output = draft_node.get("output", {})
+    if isinstance(output, dict):
+        return output.get("text", "")
+    return str(output) if output else ""
+
+
 class WritingProfileStore:
     """CRUD operations for the WritingProfile singleton.
 

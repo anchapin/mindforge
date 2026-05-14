@@ -125,6 +125,14 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
                 "task_type": "skill",
                 "current_node": skill_result.current_node,
                 "draft_content": skill_result.draft_content,
+                # Persist execution context for approval gate resume
+                "skill_execution_context": {
+                    "skill_id": matched_skill.id,
+                    "skill_version": matched_skill.version,
+                    "node_id": skill_result.current_node,
+                    "nodes_completed": skill_result.nodes_completed,
+                    "scratch": skill_result.final_output or {},
+                },
             }
             agent_role = matched_skill.agent_role or "skill-executor"
             result_summary = {"status": skill_result.status, "nodes_completed": skill_result.nodes_completed}
@@ -182,6 +190,59 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
         await ws.send_task_failed(task_id, str(exc), False)
 
 
+class ClarificationRequest(BaseModel):
+    decision: str
+    edited_draft: dict[str, Any] | None = None
+
+
+@router.post("/{task_id}/clarification")
+async def clarify_task(
+    task_id: str,
+    payload: ClarificationRequest,
+    db=Depends(db_dep),
+    ws=Depends(get_ws_manager),
+):
+    """Resolve a clarification request from the dashboard.
+
+    Receives the user's decision (and optionally an edited draft) and injects
+    it into the task context so the agent can continue with resolved ambiguity.
+
+    From SPEC.md Section 2.5 — clarification_response from dashboard.
+    """
+    task = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    ctx = json.loads(task["context"]) if task["context"] else {}
+
+    # Inject the clarification decision as a constraint
+    ctx["constraint"] = payload.decision
+
+    # If user edited the draft, store it
+    if payload.edited_draft is not None:
+        ctx["draft_content"] = payload.edited_draft
+        ctx["user_modified_draft"] = True
+
+    # Update task context and set status back to running
+    db.execute(
+        "UPDATE tasks SET status = 'running', updated_at = ?, context = ? WHERE id = ?",
+        (datetime.utcnow().isoformat(), json.dumps(ctx), task_id),
+    )
+    db.commit()
+
+    await ws.send(
+        task_id,
+        {
+            "type": "clarification_resolved",
+            "task_id": task_id,
+            "decision": payload.decision,
+            "edited_draft": payload.edited_draft,
+        },
+    )
+
+    return {"status": "clarification_resolved", "constraint": payload.decision}
+
+
 @router.get("/{task_id}")
 def get_task(task_id: str, db=Depends(db_dep)):
     row = db.execute("SELECT * FROM tasks WHERE id = ?", (task_id,)).fetchone()
@@ -203,6 +264,89 @@ async def approve_task(task_id: str, payload: ApprovalRequest, db=Depends(db_dep
         ctx["draft_content"] = payload.edited_content
         ctx["user_modified_draft"] = True
 
+    # If skill_execution_context exists, resume the DAG via execute_skill_continue
+    exec_ctx_raw = ctx.get("skill_execution_context")
+    if exec_ctx_raw:
+        from ...llm.router import LLMRouter
+        from ...skills.executor import execute_skill_continue
+        from ...skills.models import SkillExecutionContext
+        from ...skills.registry import get_registry
+
+        registry = get_registry()
+        skill = registry.get(exec_ctx_raw["skill_id"])
+        if skill is None:
+            raise HTTPException(status_code=400, detail=f"Skill not found: {exec_ctx_raw['skill_id']}")
+
+        # Reconstruct SkillExecutionContext from persisted state
+        skill_ctx = SkillExecutionContext(
+            task_id=task_id,
+            skill=skill,
+            node_id=exec_ctx_raw["node_id"],
+            scratch=exec_ctx_raw.get("scratch", {}),
+            nodes_completed=exec_ctx_raw.get("nodes_completed", []),
+            started_at=datetime.utcnow(),  # started_at is not persisted; use now for continue
+        )
+
+        llm_router = LLMRouter()
+        from ...tools.registry import ToolRegistry
+        tools = ToolRegistry()
+
+        continue_result = await execute_skill_continue(
+            ctx=skill_ctx,
+            approval_action="approved",
+            edited_content=payload.edited_content,
+            llm_complete=llm_router.complete,
+            tools=tools,
+        )
+
+        # Update task with the continued result
+        final_status = "completed" if continue_result.status in ("completed", "draft") else "failed"
+        ctx["current_node"] = continue_result.current_node
+        ctx["skill_execution_context"] = {
+            "skill_id": skill.id,
+            "skill_version": skill.version,
+            "node_id": continue_result.current_node,
+            "nodes_completed": continue_result.nodes_completed,
+            "scratch": continue_result.final_output or skill_ctx.scratch,
+        }
+        if continue_result.error:
+            ctx["skill_error"] = continue_result.error
+
+        db.execute(
+            "UPDATE tasks SET status = ?, updated_at = ?, context = ?, completed_at = ? WHERE id = ?",
+            (final_status, datetime.utcnow().isoformat(), json.dumps(ctx),
+             datetime.utcnow().isoformat() if final_status == "completed" else None, task_id),
+        )
+        db.commit()
+
+        # Style learning: extract writing profile from approved content
+        try:
+            from ...memory.style import WritingProfileStore, extract_style_fields
+            style_store = WritingProfileStore()
+            # Use edited content if provided, otherwise extract from draft scratch
+            if payload.edited_content:
+                content = payload.edited_content.get("text", "") or payload.edited_content.get("content", "")
+            else:
+                draft_node = skill_ctx.scratch.get("draft", {})
+                output = draft_node.get("output", {})
+                content = output.get("text", "") if isinstance(output, dict) else str(output or "")
+            if content:
+                style_fields = await extract_style_fields(content, llm_router.complete)
+                if style_fields:
+                    style_store.update_style(style_fields)
+        except Exception:
+            pass  # Style learning is best-effort; never fail approval due to it
+
+        ws = get_ws_manager()
+        await ws.send_approval_resolved(task_id, skill_ctx.node_id, "approved")
+        if final_status == "completed":
+            await ws.send_task_completed(task_id, {"status": continue_result.status})
+        else:
+            await ws.send_task_failed(task_id, continue_result.error or "unknown", False)
+
+        return {"status": "approved", "skill_status": continue_result.status}
+
+    # No skill context — fall back to simple approval (non-skill task approval)
     db.execute(
         "UPDATE tasks SET status = 'executing', updated_at = ?, context = ? WHERE id = ?",
         (datetime.utcnow().isoformat(), json.dumps(ctx), task_id),
