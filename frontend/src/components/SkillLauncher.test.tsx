@@ -34,7 +34,7 @@ vi.mock("@/lib/api", async () => {
 const mockUseQuery = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
     useQuery: mockUseQuery,
@@ -52,8 +52,8 @@ describe("SkillLauncher", () => {
   });
 
   it("renders skills heading", async () => {
-    const { listSkills } = await import("@/lib/api");
-    listSkills.mockResolvedValue(mockSkills);
+    const api = await import("@/lib/api");
+    vi.mocked(api.listSkills).mockResolvedValue(mockSkills);
     mockUseQuery.mockReturnValue({ data: mockSkills, isLoading: false });
 
     render(<TestWrapper><SkillLauncher /></TestWrapper>);
@@ -62,8 +62,8 @@ describe("SkillLauncher", () => {
   });
 
   it("renders skills list", async () => {
-    const { listSkills } = await import("@/lib/api");
-    listSkills.mockResolvedValue(mockSkills);
+    const api = await import("@/lib/api");
+    vi.mocked(api.listSkills).mockResolvedValue(mockSkills);
     mockUseQuery.mockReturnValue({ data: mockSkills, isLoading: false });
 
     render(<TestWrapper><SkillLauncher /></TestWrapper>);
@@ -81,8 +81,8 @@ describe("SkillLauncher", () => {
   });
 
   it("filters skills by search query", async () => {
-    const { listSkills } = await import("@/lib/api");
-    listSkills.mockResolvedValue(mockSkills);
+    const api = await import("@/lib/api");
+    vi.mocked(api.listSkills).mockResolvedValue(mockSkills);
     mockUseQuery.mockReturnValue({ data: mockSkills, isLoading: false });
 
     render(<TestWrapper><SkillLauncher /></TestWrapper>);
