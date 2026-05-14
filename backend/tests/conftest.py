@@ -11,14 +11,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
-@pytest.fixture(scope="session")
-def event_loop():
-    """One event loop per test session for async tests."""
-    loop = asyncio.new_event_loop()
-    yield loop  # type: ignore[misc]
-    loop.close()
-
-
 @pytest.fixture
 def pglite_test_db(tmp_path: Path) -> MagicMock:  # type: ignore[misc,return-value]
     """Isolated PGLite DB for each test.

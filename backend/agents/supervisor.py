@@ -7,6 +7,7 @@ Uses LangGraph StateGraph with SQLite checkpointer for task persistence across r
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -261,20 +262,27 @@ def build_supervisor_graph(
         # Install langgraph-checkpoint-sqlite>=2.0.0,<3.0.0 and aiosqlite for async use:
         #   pip install langgraph-checkpoint-sqlite aiosqlite
         # SqliteSaver (sync) does NOT support async ainvoke() — must use AsyncSqliteSaver.
-        # Since aiosqlite.connect() is async, the graph must be compiled inside an async
-        # context. SupervisorRunner.run() handles this by calling _build_graph_async().
+        # We must do the async connection + compile in a sync-safe way:
         try:
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-            conn = aiosqlite.connect(checkpointer_path)
+
+            # aiosqlite.connect() is a coroutine — resolve it synchronously
+            # via a blocking event loop. This is safe at graph-building time
+            # (not inside an already-running event loop).
+            loop = asyncio.new_event_loop()
+            try:
+                conn = loop.run_until_complete(aiosqlite.connect(checkpointer_path))
+            finally:
+                loop.close()
             checkpointer = AsyncSqliteSaver(conn)
-            return builder.compile(checkpointer=checkpointer)
+            return builder.compile(checkpointer=checkpointer)  # type: ignore[return-value]
         except ImportError:
             logger.warning(
                 "AsyncSqliteSaver not available, using MemorySaver (no persistence). "
                 "Install langgraph-checkpoint-sqlite>=2.0.0,<3.0.0 and aiosqlite for persistence."
             )
-            return builder.compile(checkpointer=MemorySaver())
+            return builder.compile(checkpointer=MemorySaver())  # type: ignore[return-value]
 
     return builder.compile()  # type: ignore[return-value]
 
