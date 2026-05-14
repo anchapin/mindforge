@@ -50,6 +50,7 @@ MIN_SIMILARITY = 0.65
 # Data model
 # ---------------------------------------------------------------------------------------
 
+
 @dataclass
 class SemanticMemoryRecord:
     id: str
@@ -73,6 +74,7 @@ class SemanticMemoryRecord:
 # ---------------------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------------------
+
 
 class SemanticMemory:
     """ChromaDB-backed semantic memory with hybrid retrieval and HMAC integrity.
@@ -191,16 +193,18 @@ class SemanticMemory:
 
             texts.append(c["text"])
             embeddings.append(embedding)
-            metadatas.append({
-                "project_id": project_id,
-                "task_id": task_id,
-                "agent_role": agent_role,
-                "hmac_sig": sig,
-                "created_at": datetime.utcnow().isoformat(),
-                "token_count": c["token_count"],
-                "chunk_index": c["chunk_index"],
-                **{k: str(v) for k, v in extra_meta.items()},
-            })
+            metadatas.append(
+                {
+                    "project_id": project_id,
+                    "task_id": task_id,
+                    "agent_role": agent_role,
+                    "hmac_sig": sig,
+                    "created_at": datetime.utcnow().isoformat(),
+                    "token_count": c["token_count"],
+                    "chunk_index": c["chunk_index"],
+                    **{k: str(v) for k, v in extra_meta.items()},
+                }
+            )
             ids.append(record_id)
 
         if ids:
@@ -267,7 +271,11 @@ class SemanticMemory:
         for i, record_id in enumerate(results["ids"][0]):  # type: ignore[index]
             doc = results["documents"][0][i]  # type: ignore[index]
             meta = results["metadatas"][0][i]  # type: ignore[index]
-            distance = results["distances"][0][i] if "distances" in results and results["distances"] and results["distances"][0] else 0.0
+            distance = (
+                results["distances"][0][i]
+                if "distances" in results and results["distances"] and results["distances"][0]
+                else 0.0
+            )
 
             # Cosine similarity from distance (ChromaDB L2 distance)
             similarity = 1.0 - distance if distance <= 2.0 else 0.0
@@ -295,14 +303,16 @@ class SemanticMemory:
             record_meta = dict(meta)
             record_meta["distance"] = distance
 
-            records.append(SemanticMemoryRecord(
-                id=record_id,
-                project_id=record_meta.get("project_id"),  # type: ignore[arg-type]
-                text=doc,
-                embedding=None,
-                metadata=record_meta,  # type: ignore[arg-type]
-                hmac_sig=sig,  # type: ignore[arg-type]
-            ))
+            records.append(
+                SemanticMemoryRecord(
+                    id=record_id,
+                    project_id=record_meta.get("project_id"),  # type: ignore[arg-type]
+                    text=doc,
+                    embedding=None,
+                    metadata=record_meta,  # type: ignore[arg-type]
+                    hmac_sig=sig,  # type: ignore[arg-type]
+                )
+            )
 
         return records
 
@@ -381,7 +391,9 @@ class SemanticMemory:
             v_score = 0.0
             if record_id in vector_by_id:
                 # Convert distance to similarity proxy (higher = better)
-                v_score = 1.0 / (RRF_K + 1 + float(vector_by_id[record_id].metadata.get("distance", 0)))
+                v_score = 1.0 / (
+                    RRF_K + 1 + float(vector_by_id[record_id].metadata.get("distance", 0))
+                )
             b_score = bm25_scores.get(record_id, 0.0)
             b_score_norm = b_score / (RRF_K + 1 + b_score) if b_score > 0 else 0.0
             fused[record_id] = v_score + b_score_norm

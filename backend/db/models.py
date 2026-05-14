@@ -130,3 +130,15 @@ class Skill(BaseModel):
     last_run_at: datetime | None = None
     created_at: datetime
     updated_at: datetime
+
+
+class UserPreference(BaseModel):
+    id: str
+    proactive_monitoring_enabled: bool
+    email_check_interval_minutes: int
+    calendar_check_interval_minutes: int
+    billing_alert_threshold_usd: int
+    notification_channel: str
+    notification_handle: str | None = None
+    created_at: datetime
+    updated_at: datetime

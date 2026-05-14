@@ -70,7 +70,9 @@ def list_tasks(status: str | None = None, project_id: str | None = None, db=Depe
 
 
 @router.post("/", response_model=dict)
-async def create_task(payload: TaskCreate, db=Depends(db_dep), memory: SharedMemoryStore = Depends(memory_dep)):
+async def create_task(
+    payload: TaskCreate, db=Depends(db_dep), memory: SharedMemoryStore = Depends(memory_dep)
+):
     task_id = str(uuid.uuid4())
     now = datetime.utcnow().isoformat()
     db.execute(
@@ -89,14 +91,23 @@ async def create_task(payload: TaskCreate, db=Depends(db_dep), memory: SharedMem
     return _row_to_task(row)
 
 
-async def _execute_task(task_id: str, description: str, project_id: str | None, memory: SharedMemoryStore):
+async def _execute_task(
+    task_id: str, description: str, project_id: str | None, memory: SharedMemoryStore
+):
     """Background task runner -- starts supervisor and updates task on completion."""
 
     conn = sqlite3.connect(DB_PATH)
-    conn.execute("UPDATE tasks SET status = 'running', updated_at = ? WHERE id = ?",
-                 (datetime.utcnow().isoformat(), task_id))
+    conn.execute(
+        "UPDATE tasks SET status = 'running', updated_at = ? WHERE id = ?",
+        (datetime.utcnow().isoformat(), task_id),
+    )
     conn.commit()
     conn.close()
+
+    ws = get_ws_manager()
+    # Send task_status_update for pending → running transition
+    # (agent_role not yet known, use "coo" as default until agent is selected)
+    await ws.send_task_status_update(task_id, "running", "coo")
 
     try:
         # Try to trigger a skill first (SPEC.md Section 2.3)
@@ -104,6 +115,8 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
 
         if matched_skill is not None:
             # Skill matched — execute it through the DAG
+            await ws.send_skill_triggered(matched_skill.id, task_id)
+
             from ...llm.router import LLMRouter
             from ...skills.executor import execute_skill
             from ...tools.registry import ToolRegistry
@@ -119,7 +132,9 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
             )
 
             # Map skill result to agent result
-            final_status = "completed" if skill_result.status in ("completed", "draft") else "failed"
+            final_status = (
+                "completed" if skill_result.status in ("completed", "draft") else "failed"
+            )
             result_context = {
                 "skill_id": matched_skill.id,
                 "task_type": "skill",
@@ -135,7 +150,10 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
                 },
             }
             agent_role = matched_skill.agent_role or "skill-executor"
-            result_summary = {"status": skill_result.status, "nodes_completed": skill_result.nodes_completed}
+            result_summary = {
+                "status": skill_result.status,
+                "nodes_completed": skill_result.nodes_completed,
+            }
             skill_error = skill_result.error
         else:
             # No skill matched — fall back to supervisor
@@ -157,7 +175,9 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
             task_id=task_id,
             task_type=str(result_context.get("task_type", "general")),  # type: ignore[arg-type]
             agent_role=agent_role,
-            summary=str(result_summary.get("summary", description)) if result_summary else description,  # type: ignore[arg-type]
+            summary=str(result_summary.get("summary", description))
+            if result_summary
+            else description,  # type: ignore[arg-type]
             outcome_status=final_status,
             created_at=datetime.utcnow(),
         )
@@ -166,24 +186,34 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
         conn = sqlite3.connect(DB_PATH)
         conn.execute(
             "UPDATE tasks SET status = ?, updated_at = ?, completed_at = ?, context = ? WHERE id = ?",
-            (final_status, datetime.utcnow().isoformat(), datetime.utcnow().isoformat(),
-             json.dumps(result_context), task_id),
+            (
+                final_status,
+                datetime.utcnow().isoformat(),
+                datetime.utcnow().isoformat(),
+                json.dumps(result_context),
+                task_id,
+            ),
         )
         conn.commit()
         conn.close()
 
         ws = get_ws_manager()
         if final_status == "completed":
+            await ws.send_task_status_update(task_id, "completed", agent_role)
             await ws.send_task_completed(task_id, result_summary or {})
         else:
+            await ws.send_task_status_update(task_id, "failed", agent_role)
             await ws.send_task_failed(task_id, skill_error or "unknown", False)
 
     except Exception as exc:
         import traceback
+
         traceback.print_exc()
         conn = sqlite3.connect(DB_PATH)
-        conn.execute("UPDATE tasks SET status = 'failed', updated_at = ? WHERE id = ?",
-                     (datetime.utcnow().isoformat(), task_id))
+        conn.execute(
+            "UPDATE tasks SET status = 'failed', updated_at = ? WHERE id = ?",
+            (datetime.utcnow().isoformat(), task_id),
+        )
         conn.commit()
         conn.close()
         ws = get_ws_manager()
@@ -289,6 +319,7 @@ async def approve_task(task_id: str, payload: ApprovalRequest, db=Depends(db_dep
 
         llm_router = LLMRouter()
         from ...tools.registry import ToolRegistry
+
         tools = ToolRegistry()
 
         continue_result = await execute_skill_continue(
@@ -314,7 +345,7 @@ async def approve_task(task_id: str, payload: ApprovalRequest, db=Depends(db_dep
 
         db.execute(
             "UPDATE tasks SET status = ?, updated_at = ?, context = ?, completed_at = ? WHERE id = ?",
-            (final_status, datetime.utcnow().isoformat(), json.dumps(ctx),
+(final_status, datetime.utcnow().isoformat(), json.dumps(ctx),
              datetime.utcnow().isoformat() if final_status == "completed" else None, task_id),
         )
         db.commit()
@@ -322,6 +353,7 @@ async def approve_task(task_id: str, payload: ApprovalRequest, db=Depends(db_dep
         # Style learning: extract writing profile from approved content
         try:
             from ...memory.style import WritingProfileStore, extract_style_fields
+
             style_store = WritingProfileStore()
             # Use edited content if provided, otherwise extract from draft scratch
             if payload.edited_content:

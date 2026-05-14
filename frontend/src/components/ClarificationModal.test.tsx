@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { ClarificationModal } from "@/components/ClarificationModal";
-import type { DraftContent } from "@/lib/api";
 import React from "react";
 
 const mockApproveTask = vi.fn();

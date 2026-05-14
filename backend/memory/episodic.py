@@ -19,16 +19,18 @@ logger = logging.getLogger(__name__)
 # Data model
 # ---------------------------------------------------------------------------------------
 
+
 @dataclass
 class EpisodicMemory:
     """A single episodic memory record — one task execution."""
+
     id: str
     project_id: str | None
     task_id: str
-    task_type: str        # from classify_task_type()
-    agent_role: str       # "coo" | "cmo" | "researcher" | "engineer"
+    task_type: str  # from classify_task_type()
+    agent_role: str  # "coo" | "cmo" | "researcher" | "engineer"
     summary: str
-    outcome_status: str   # "completed" | "failed" | "escalated"
+    outcome_status: str  # "completed" | "failed" | "escalated"
     feedback: str | None = None
     created_at: datetime = field(default_factory=datetime.utcnow)
 
@@ -63,6 +65,7 @@ class EpisodicMemory:
 # ---------------------------------------------------------------------------------------
 # Store
 # ---------------------------------------------------------------------------------------
+
 
 class EpisodicMemoryStore:
     """CRUD + query for episodic memory in PGLite.
@@ -106,16 +109,13 @@ class EpisodicMemoryStore:
                 )
             """)
             conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_episodic_project "
-                "ON episodic_memory(project_id)"
+                "CREATE INDEX IF NOT EXISTS idx_episodic_project ON episodic_memory(project_id)"
             )
             conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_episodic_task_type "
-                "ON episodic_memory(task_type)"
+                "CREATE INDEX IF NOT EXISTS idx_episodic_task_type ON episodic_memory(task_type)"
             )
             conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_episodic_created "
-                "ON episodic_memory(created_at)"
+                "CREATE INDEX IF NOT EXISTS idx_episodic_created ON episodic_memory(created_at)"
             )
             conn.commit()
 

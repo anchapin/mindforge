@@ -26,6 +26,7 @@ from backend.memory.sanitizer import (
 # Layer 1 — sanitize_for_memory
 # ---------------------------------------------------------------------------------------
 
+
 class TestLayer1Sanitization:
     """Layer 1: input classification and sanitization at write time."""
 
@@ -66,7 +67,10 @@ class TestLayer1Sanitization:
 
     def test_base64_obfuscation_detected(self) -> None:
         """Long base64 strings (obfuscation) are flagged."""
-        long_b64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/ABCDEFGHIJKLMNOPQRSTUVWXYZ" * 4
+        long_b64 = (
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+            * 4
+        )
         result = classify_injection_risk(long_b64, ContentSource.INTEGRATION)
         assert result.is_suspect is True
 
@@ -85,6 +89,7 @@ class TestLayer1Sanitization:
 # ---------------------------------------------------------------------------------------
 # Layer 2 — filter_memory_for_prompt
 # ---------------------------------------------------------------------------------------
+
 
 class TestLayer2Filtering:
     """Layer 2: instruction stripping at prompt-build time."""
@@ -173,6 +178,7 @@ class TestLayer2Filtering:
 # Layer 3 — approval gate amplification
 # ---------------------------------------------------------------------------------------
 
+
 class TestLayer3ApprovalGates:
     """Layer 3: forced approval for memory-driven high-stakes actions."""
 
@@ -238,14 +244,19 @@ class TestLayer3ApprovalGates:
         """All high-stakes actions respect the memory_ratio threshold."""
         for action in HIGH_STAKES_ACTIONS:
             # Low memory influence → no gate
-            assert requires_memory_approval_gate(action, memory_context_ratio=0.0) is False, f"{action} should not gate at 0.0"
+            assert requires_memory_approval_gate(action, memory_context_ratio=0.0) is False, (
+                f"{action} should not gate at 0.0"
+            )
             # High memory influence → gate
-            assert requires_memory_approval_gate(action, memory_context_ratio=1.0) is True, f"{action} should gate at 1.0"
+            assert requires_memory_approval_gate(action, memory_context_ratio=1.0) is True, (
+                f"{action} should gate at 1.0"
+            )
 
 
 # ---------------------------------------------------------------------------------------
 # Layer 2b — GLiGuard integration
 # ---------------------------------------------------------------------------------------
+
 
 class TestLayer2bGliguard:
     """Layer 2b: GLiGuard learned safety classifier (optional, env-gated)."""
@@ -253,6 +264,7 @@ class TestLayer2bGliguard:
     def test_gliguard_disabled_by_default(self) -> None:
         """GLIGUARD_ENABLED defaults to False when env var is not set."""
         from backend.llm.prompts import GLIGUARD_ENABLED
+
         assert GLIGUARD_ENABLED is False
 
     def test_check_with_gliguard_when_disabled_returns_safe(self) -> None:

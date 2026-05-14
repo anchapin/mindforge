@@ -11,7 +11,7 @@ interface ClarificationModalProps {
 }
 
 export function ClarificationModal({
-  taskId,
+  taskId: _taskId,
   agentName,
   question,
   choices = [],

@@ -42,9 +42,7 @@ class LLMConfig:
 
 TIER_CONFIGS: dict[InferenceTier, LLMConfig] = {
     InferenceTier.LOCAL: LLMConfig(InferenceTier.LOCAL, "llama3.2:3b"),
-    InferenceTier.CLOUD_FAST: LLMConfig(
-        InferenceTier.CLOUD_FAST, "google/gemini-2.0-flash"
-    ),
+    InferenceTier.CLOUD_FAST: LLMConfig(InferenceTier.CLOUD_FAST, "google/gemini-2.0-flash"),
     InferenceTier.CLOUD_HEAVY: LLMConfig(InferenceTier.CLOUD_HEAVY, "openai/gpt-4o"),
 }
 
@@ -238,9 +236,7 @@ class LLMRouter:
             cfg, system, prompt, stream=stream, agent_role=agent_role
         )
 
-    async def _ollama_complete(
-        self, cfg: LLMConfig, system: str, prompt: str
-    ) -> str:
+    async def _ollama_complete(self, cfg: LLMConfig, system: str, prompt: str) -> str:
         """Call local Ollama server."""
         import ollama
 
@@ -383,9 +379,7 @@ class LLMRouter:
                     import json
 
                     chunk = json.loads(data)
-                    token = chunk.get("choices", [{}])[0].get("delta", {}).get(
-                        "content", ""
-                    )
+                    token = chunk.get("choices", [{}])[0].get("delta", {}).get("content", "")
                     if token:
                         yield token
 

@@ -11,12 +11,8 @@ Run: pytest backend/tests/integration/test_rate_limiter.py -v
 import asyncio
 import os
 import pathlib
-import sqlite3
-import tempfile
-from unittest.mock import patch
 
 import pytest
-
 
 # Patch os.makedirs BEFORE any backend imports
 _original_makedirs = os.makedirs

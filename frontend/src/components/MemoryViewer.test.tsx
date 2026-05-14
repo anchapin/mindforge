@@ -35,7 +35,7 @@ vi.mock("@/lib/api", async () => {
 const mockUseQuery = vi.hoisted(() => vi.fn());
 
 vi.mock("@tanstack/react-query", async (importOriginal) => {
-  const actual = await importOriginal();
+  const actual = (await importOriginal()) as Record<string, unknown>;
   return {
     ...actual,
     useQuery: mockUseQuery,
@@ -48,8 +48,8 @@ describe("MemoryViewer", () => {
   });
 
   it("renders tab buttons for memory types", async () => {
-    const { listMemory } = await import("@/lib/api");
-    listMemory.mockResolvedValue({ semantic: [], episodic: [], style: [] });
+    const api = await import("@/lib/api");
+    vi.mocked(api.listMemory).mockResolvedValue({ semantic: [], episodic: [], style: [] });
     mockUseQuery.mockReturnValue({
       data: { semantic: [], episodic: [], style: [] },
       isLoading: false,
@@ -64,7 +64,7 @@ describe("MemoryViewer", () => {
   });
 
   it("renders semantic memory entries", async () => {
-    const { listMemory } = await import("@/lib/api");
+    const api = await import("@/lib/api");
     const memories = {
       semantic: [
         { id: "sem-1", memory_type: "semantic", content: "User prefers concise responses", created_at: "2024-01-01T00:00:00Z" },
@@ -72,7 +72,7 @@ describe("MemoryViewer", () => {
       episodic: [],
       style: [],
     };
-    listMemory.mockResolvedValue(memories);
+    vi.mocked(api.listMemory).mockResolvedValue(memories);
     mockUseQuery.mockReturnValue({ data: memories, isLoading: false });
 
     render(<TestWrapper><MemoryViewer /></TestWrapper>);

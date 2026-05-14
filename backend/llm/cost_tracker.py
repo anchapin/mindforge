@@ -35,21 +35,11 @@ class BudgetLimits:
 def _load_limits_from_env() -> BudgetLimits:
     """Load budget limits from environment variables, with defaults."""
     return BudgetLimits(
-        max_calls_per_minute=int(
-            os.environ.get("OPENROUTER_MAX_CALLS_PER_MINUTE", "30")
-        ),
-        max_calls_per_day=int(
-            os.environ.get("OPENROUTER_MAX_CALLS_PER_DAY", "500")
-        ),
-        max_tokens_per_day=int(
-            os.environ.get("OPENROUTER_MAX_TOKENS_PER_DAY", "2000000")
-        ),
-        calls_per_day_warning=int(
-            os.environ.get("OPENROUTER_CALLS_PER_DAY_WARNING", "300")
-        ),
-        tokens_per_day_warning=int(
-            os.environ.get("OPENROUTER_TOKENS_PER_DAY_WARNING", "1500000")
-        ),
+        max_calls_per_minute=int(os.environ.get("OPENROUTER_MAX_CALLS_PER_MINUTE", "30")),
+        max_calls_per_day=int(os.environ.get("OPENROUTER_MAX_CALLS_PER_DAY", "500")),
+        max_tokens_per_day=int(os.environ.get("OPENROUTER_MAX_TOKENS_PER_DAY", "2000000")),
+        calls_per_day_warning=int(os.environ.get("OPENROUTER_CALLS_PER_DAY_WARNING", "300")),
+        tokens_per_day_warning=int(os.environ.get("OPENROUTER_TOKENS_PER_DAY_WARNING", "1500000")),
     )
 
 
@@ -71,7 +61,13 @@ class OpenRouterBudgetGuard:
         guard.record(tokens_used=1200)
     """
 
-    def __init__(self, limits: BudgetLimits | None = None):
+    def __init__(self, limits: BudgetLimits | None = None, on_budget_warning=None):
+        """Initialize budget guard.
+
+        Args:
+            limits: Optional BudgetLimits instance. Uses env defaults if None.
+            on_budget_warning: Optional callable(calls_remaining, tokens_remaining) for WS broadcast.
+        """
         self._limits = limits or _load_limits_from_env()
         self._calls_minute: deque[datetime] = deque()
         self._calls_day: deque[datetime] = deque()
@@ -79,6 +75,7 @@ class OpenRouterBudgetGuard:
         self._last_warning_log: datetime | None = None
         self._lock = threading.Lock()
         self._day_offset = datetime.utcnow().day  # Track day changes
+        self._on_budget_warning = on_budget_warning  # Optional callback for WS broadcast
 
     def _reset_day_if_needed(self) -> None:
         """Clear daily counters if we've crossed midnight UTC."""
@@ -155,19 +152,15 @@ class OpenRouterBudgetGuard:
         self._check_warnings()
 
     def _check_warnings(self) -> None:
-        """Log warnings when approaching budget limits."""
+        """Log warnings and broadcast WS budget_warning when approaching budget limits."""
         # Avoid spamming logs — at most once per hour
         now = datetime.utcnow()
-        if self._last_warning_log and (
-            now - self._last_warning_log
-        ).total_seconds() < 3600:
+        if self._last_warning_log and (now - self._last_warning_log).total_seconds() < 3600:
             return
 
         with self._lock:
             calls_remaining = self._limits.max_calls_per_day - len(self._calls_day)
-            tokens_remaining = max(
-                0, self._limits.max_tokens_per_day - self._tokens_day
-            )
+            tokens_remaining = max(0, self._limits.max_tokens_per_day - self._tokens_day)
 
             if calls_remaining < 50:
                 logger.warning(
@@ -176,6 +169,7 @@ class OpenRouterBudgetGuard:
                     daily_cap=self._limits.max_calls_per_day,
                 )
                 self._last_warning_log = now
+                self._emit_budget_warning(calls_remaining=calls_remaining, tokens_remaining=tokens_remaining)
 
             if tokens_remaining < 300_000:
                 logger.warning(
@@ -184,6 +178,48 @@ class OpenRouterBudgetGuard:
                     daily_cap=self._limits.max_tokens_per_day,
                 )
                 self._last_warning_log = now
+                self._emit_budget_warning(calls_remaining=calls_remaining, tokens_remaining=tokens_remaining)
+
+    def _emit_budget_warning(self, calls_remaining: int, tokens_remaining: int) -> None:
+        """Emit budget_warning via the registered callback or WS broadcast.
+
+        This method is called while holding the lock. It posts the broadcast
+        asynchronously via call_soon_threadsafe so the lock is released before
+        the coroutine runs.
+        """
+        if self._on_budget_warning:
+            self._on_budget_warning(calls_remaining, tokens_remaining)
+            return
+
+        # Fallback: try to broadcast via ws_manager (async-safe)
+        try:
+            import asyncio
+
+            def _do_broadcast():
+                try:
+                    from backend.api.websocket import ws_manager
+                    asyncio.create_task(ws_manager.broadcast({
+                        "type": "budget_warning",
+                        "calls_remaining": calls_remaining,
+                        "tokens_remaining": tokens_remaining,
+                        "message": (
+                            f"Approaching OpenRouter limit: "
+                            f"{calls_remaining} calls remaining, "
+                            f"{tokens_remaining:,} tokens remaining."
+                        ),
+                    }))
+                except Exception:
+                    pass
+
+            try:
+                loop = asyncio.get_running_loop()
+                loop.call_soon_threadsafe(_do_broadcast)
+            except RuntimeError:
+                # No running event loop — skip WS broadcast in sync context
+                pass
+        except Exception:
+            # Never let WS broadcast failure affect budget guard operation
+            pass
 
     @property
     def usage_today(self) -> dict:
@@ -197,11 +233,8 @@ class OpenRouterBudgetGuard:
             return {
                 "calls_today": len(self._calls_day),
                 "tokens_today": self._tokens_day,
-                "calls_remaining": self._limits.max_calls_per_day
-                - len(self._calls_day),
-                "tokens_remaining": max(
-                    0, self._limits.max_tokens_per_day - self._tokens_day
-                ),
+                "calls_remaining": self._limits.max_calls_per_day - len(self._calls_day),
+                "tokens_remaining": max(0, self._limits.max_tokens_per_day - self._tokens_day),
             }
 
     def warn_if_exceeded(self) -> None:

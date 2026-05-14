@@ -7,7 +7,16 @@ import structlog
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 
-from backend.api.routes import integrations, memories, skills, tasks
+from backend.api.routes import (
+    integrations,
+    memories,
+    onboarding,
+    preferences,
+    skills,
+    tasks,
+    usage,
+    webhooks,
+)
 from backend.api.websocket import ws_manager
 from backend.db.migrate import run_migrations
 from backend.llm.router import LLM_ROUTER
@@ -69,6 +78,10 @@ app.include_router(tasks.router)
 app.include_router(memories.router)
 app.include_router(skills.router)
 app.include_router(integrations.router)
+app.include_router(preferences.router)
+app.include_router(onboarding.router)
+app.include_router(usage.router)
+app.include_router(webhooks.router)
 
 
 @app.websocket("/ws")
@@ -95,6 +108,7 @@ async def health():
 @app.get("/ready")
 async def ready():
     from backend.db import check_chroma, check_pglite
+
     pglite_ok = await check_pglite()
     chroma_ok = await check_chroma()
     return {

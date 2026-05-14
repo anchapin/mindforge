@@ -29,6 +29,7 @@ EMBEDDING_TIMEOUT = int(os.getenv("OLLAMA_EMBEDDING_TIMEOUT", "30"))
 # Token estimation
 # ---------------------------------------------------------------------------------------
 
+
 def estimate_tokens(text: str) -> int:
     """Rough token estimate: 4 chars per token for English text."""
     return max(1, len(text) // 4)
@@ -38,12 +39,14 @@ def estimate_tokens(text: str) -> int:
 # Chunking
 # ---------------------------------------------------------------------------------------
 
+
 @dataclass
 class ChunkConfig:
     """Configuration for text chunking."""
-    chunk_size: int = 512       # target tokens per chunk
-    chunk_overlap: int = 64     # tokens of overlap between chunks
-    min_chunk_size: int = 32   # drop chunks below this size
+
+    chunk_size: int = 512  # target tokens per chunk
+    chunk_overlap: int = 64  # tokens of overlap between chunks
+    min_chunk_size: int = 32  # drop chunks below this size
 
     def __post_init__(self):
         if self.chunk_size <= self.chunk_overlap:
@@ -53,8 +56,9 @@ class ChunkConfig:
 def _split_into_sentences(text: str) -> list[str]:
     """Split text on sentence boundaries, preserving the delimiter."""
     import re
+
     # Split on common sentence terminators
-    parts = re.split(r'(?<=[.!?])\s+', text)
+    parts = re.split(r"(?<=[.!?])\s+", text)
     return [p.strip() for p in parts if p.strip()]
 
 
@@ -89,11 +93,13 @@ def chunk_text(text: str, config: ChunkConfig | None = None) -> list[dict]:
         if current_len + sent_len > char_limit and current:
             # Emit current chunk
             chunk_text = " ".join(current)
-            chunks.append({
-                "text": chunk_text,
-                "token_count": current_len,
-                "chunk_index": chunk_index,
-            })
+            chunks.append(
+                {
+                    "text": chunk_text,
+                    "token_count": current_len,
+                    "chunk_index": chunk_index,
+                }
+            )
             chunk_index += 1
 
             # Keep overlap from end of current
@@ -107,11 +113,13 @@ def chunk_text(text: str, config: ChunkConfig | None = None) -> list[dict]:
     # Final chunk
     if current:
         chunk_text = " ".join(current)
-        chunks.append({
-            "text": chunk_text,
-            "token_count": current_len,
-            "chunk_index": chunk_index,
-        })
+        chunks.append(
+            {
+                "text": chunk_text,
+                "token_count": current_len,
+                "chunk_index": chunk_index,
+            }
+        )
 
     # Filter tiny chunks
     return [c for c in chunks if c["token_count"] >= config.min_chunk_size]
@@ -120,6 +128,7 @@ def chunk_text(text: str, config: ChunkConfig | None = None) -> list[dict]:
 # ---------------------------------------------------------------------------------------
 # Embedding generation
 # ---------------------------------------------------------------------------------------
+
 
 class EmbeddingError(Exception):
     """Raised when embedding generation fails."""
@@ -162,9 +171,7 @@ async def _ollama_embed(texts: list[str]) -> list[list[float]]:
                 json={"model": EMBEDDING_MODEL, "prompt": text},
             )
             if response.status_code != 200:
-                raise EmbeddingError(
-                    f"Ollama returned {response.status_code}: {response.text}"
-                )
+                raise EmbeddingError(f"Ollama returned {response.status_code}: {response.text}")
             data = response.json()
             embedding = data.get("embedding")
             if not embedding:
@@ -177,6 +184,7 @@ async def _ollama_embed(texts: list[str]) -> list[list[float]]:
 def _mock_embeddings(count: int, dim: int) -> list[list[float]]:
     """Return deterministic mock embeddings for dev/test when Ollama is unavailable."""
     import hashlib
+
     results = []
     for i in range(count):
         # Deterministic pseudo-random based on index

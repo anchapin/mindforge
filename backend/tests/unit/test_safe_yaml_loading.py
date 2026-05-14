@@ -42,7 +42,7 @@ def _is_actually_safe() -> bool:
         yaml.safe_load("!!python/object/apply:os.system ['echo test']")
         return False  # vulnerable — safe_load accepted it
     except yaml.constructor.ConstructorError:
-        return True   # properly rejects
+        return True  # properly rejects
 
 
 @pytest.mark.skipif(

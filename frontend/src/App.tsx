@@ -75,19 +75,19 @@ function Dashboard() {
               <p className="mt-1 font-medium">{activeTask.task_type}</p>
             </div>
 
-            {activeTask.status === "draft" && activeTask.context?.draft_content && (
+            {activeTask.status === "draft" && activeTask.context?.draft_content ? (
               <DraftReview
                 taskId={activeTask.id}
                 draft={activeTask.context.draft_content as { body: string; subject?: string }}
                 approvalDeadlineIso={activeTask.context.approval_deadline_iso as string ?? new Date(Date.now() + 86400000).toISOString()}
               />
-            )}
+            ) : null}
 
-            {activeTask.status === "failed" && activeTask.context?.error && (
+            {activeTask.status === "failed" && activeTask.context?.error ? (
               <div className="rounded border border-red-800 bg-red-900/20 p-3 text-sm text-red-300">
-                {activeTask.context.error}
+                {String(activeTask.context.error)}
               </div>
-            )}
+            ) : null}
 
             {activeTask.completed_at && (
               <div>

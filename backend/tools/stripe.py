@@ -30,7 +30,10 @@ class StripeTool(BaseTool):  # type: ignore[override]
                     data = resp.json()
                     return ToolResult(
                         success=True,
-                        data={"available": data["available"][0]["amount"], "pending": data["pending"][0]["amount"]},
+                        data={
+                            "available": data["available"][0]["amount"],
+                            "pending": data["pending"][0]["amount"],
+                        },
                         latency_ms=(time.monotonic() - start) * 1000,
                     )
 
@@ -41,11 +44,20 @@ class StripeTool(BaseTool):  # type: ignore[override]
                         params={"limit": kwargs.get("limit", 20)},
                     )
                     charges = [
-                        {"id": c["id"], "amount": c["amount"], "currency": c["currency"],
-                         "status": c["status"], "created": c["created"]}
+                        {
+                            "id": c["id"],
+                            "amount": c["amount"],
+                            "currency": c["currency"],
+                            "status": c["status"],
+                            "created": c["created"],
+                        }
                         for c in resp.json().get("data", [])
                     ]
-                    return ToolResult(success=True, data={"charges": charges}, latency_ms=(time.monotonic() - start) * 1000)
+                    return ToolResult(
+                        success=True,
+                        data={"charges": charges},
+                        latency_ms=(time.monotonic() - start) * 1000,
+                    )
 
                 elif action == "customers":
                     resp = await client.get(
@@ -57,21 +69,38 @@ class StripeTool(BaseTool):  # type: ignore[override]
                         {"id": c["id"], "email": c.get("email"), "name": c.get("name")}
                         for c in resp.json().get("data", [])
                     ]
-                    return ToolResult(success=True, data={"customers": customers}, latency_ms=(time.monotonic() - start) * 1000)
+                    return ToolResult(
+                        success=True,
+                        data={"customers": customers},
+                        latency_ms=(time.monotonic() - start) * 1000,
+                    )
 
                 else:
-                    return ToolResult(success=False, error=f"Unknown action: {action}", latency_ms=(time.monotonic() - start) * 1000)
+                    return ToolResult(
+                        success=False,
+                        error=f"Unknown action: {action}",
+                        latency_ms=(time.monotonic() - start) * 1000,
+                    )
 
             except httpx.HTTPStatusError as exc:
-                return ToolResult(success=False, error=f"HTTP {exc.response.status_code}", latency_ms=(time.monotonic() - start) * 1000)
+                return ToolResult(
+                    success=False,
+                    error=f"HTTP {exc.response.status_code}",
+                    latency_ms=(time.monotonic() - start) * 1000,
+                )
             except Exception as exc:
                 logger.exception("Stripe tool error")
-                return ToolResult(success=False, error=str(exc), latency_ms=(time.monotonic() - start) * 1000)
+                return ToolResult(
+                    success=False, error=str(exc), latency_ms=(time.monotonic() - start) * 1000
+                )
 
     async def validate_auth(self) -> bool:
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                resp = await client.get("https://api.stripe.com/v1/balance", headers={"Authorization": "Bearer sk_test_placeholder"})
+                resp = await client.get(
+                    "https://api.stripe.com/v1/balance",
+                    headers={"Authorization": "Bearer sk_test_placeholder"},
+                )
                 return resp.status_code in (200, 401)
             except Exception:
                 return False

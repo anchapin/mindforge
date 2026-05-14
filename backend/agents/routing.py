@@ -55,6 +55,7 @@ AGENT_ROLES: dict[str, str] = {
 # Agent routing
 # ---------------------------------------------------------------------------------------
 
+
 @dataclass
 class RouteResult:
     agent_role: str
@@ -69,14 +70,14 @@ def route_to_agent(task_description: str, task_type: str) -> RouteResult:
     Falls back to COO for ambiguous cases.
     """
     ROLE_MAP: dict[str, str] = {
-        "github":       "engineer",
-        "engineering":  "engineer",
-        "email":        "cmo",
-        "content":      "cmo",
-        "research":     "researcher",
-        "finance":      "coo",
-        "operations":   "coo",
-        "general":      "coo",
+        "github": "engineer",
+        "engineering": "engineer",
+        "email": "cmo",
+        "content": "cmo",
+        "research": "researcher",
+        "finance": "coo",
+        "operations": "coo",
+        "general": "coo",
     }
 
     agent_role = ROLE_MAP.get(task_type, "coo")
@@ -94,12 +95,24 @@ def route_to_agent(task_description: str, task_type: str) -> RouteResult:
 # ---------------------------------------------------------------------------------------
 
 SKILL_INTENTS = [
-    "email_draft", "email_reply", "email_summary",
-    "github_activity", "github_issue", "github_pr_review",
-    "refund_negotiation", "billing_inquiry", "invoice_review",
-    "content_post", "content_edit", "content_strategy",
-    "research_summary", "research_comparison", "research_alert",
-    "calendar_schedule", "calendar_conflict", "meeting_prep",
+    "email_draft",
+    "email_reply",
+    "email_summary",
+    "github_activity",
+    "github_issue",
+    "github_pr_review",
+    "refund_negotiation",
+    "billing_inquiry",
+    "invoice_review",
+    "content_post",
+    "content_edit",
+    "content_strategy",
+    "research_summary",
+    "research_comparison",
+    "research_alert",
+    "calendar_schedule",
+    "calendar_conflict",
+    "meeting_prep",
     "general",
 ]
 

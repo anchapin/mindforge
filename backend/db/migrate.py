@@ -36,9 +36,11 @@ def reset_db(db_path: str | None = None) -> None:
     """Drop all tables and re-run migrations. FOR TESTING ONLY."""
     path = db_path or DB_PATH
     with sqlite3.connect(path) as conn:
-        tables = [r["name"] for r in conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table'"
-        ).fetchall() if r["name"] not in ("sqlite_sequence",)]
+        tables = [
+            r["name"]
+            for r in conn.execute("SELECT name FROM sqlite_master WHERE type='table'").fetchall()
+            if r["name"] not in ("sqlite_sequence",)
+        ]
         for table in tables:
             conn.execute(f"DROP TABLE IF EXISTS {table}")
         conn.commit()

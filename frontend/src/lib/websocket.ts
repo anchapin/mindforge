@@ -1,5 +1,3 @@
-import type { Task } from "./api";
-
 export type WSMessageType =
   | "task_created"
   | "task_status_update"

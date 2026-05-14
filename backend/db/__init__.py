@@ -30,6 +30,7 @@ async def check_chroma() -> bool:
     """Check ChromaDB is reachable."""
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get("http://localhost:8000/api/v1/heartbeat")
             return resp.status_code == 200
@@ -41,6 +42,7 @@ async def check_temporal() -> bool:
     """Check Temporal worker is reachable."""
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get("http://localhost:8088/api/v1/cluster/health")
             return resp.status_code == 200
@@ -52,6 +54,7 @@ async def check_ollama() -> bool:
     """Check Ollama is reachable."""
     try:
         import httpx
+
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get("http://localhost:11434/api/tags")
             return resp.status_code == 200

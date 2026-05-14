@@ -2,8 +2,6 @@ import { useEffect } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { getGlobalWS, type WSMessage } from "../lib/websocket";
 import { useTaskStore } from "../stores/taskStore";
-import { approveTask, rejectTask } from "../lib/api";
-import type { DraftContent } from "../lib/api";
 
 export function WSMessageHandler() {
   const queryClient = useQueryClient();

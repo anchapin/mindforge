@@ -31,13 +31,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------------------
 
 TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
-    ("github",       ["github", "commit", "pr ", "pull request", "repository", "git", "branch"]),
-    ("email",        ["email", "reply", "inbox", "mail", "send", "draft", "message"]),
-    ("research",     ["research", "find", "lookup", "analyze", "competitor", "market", "data"]),
-    ("content",      ["write", "blog", "post", "tweet", "linkedin", "content", "copy", "draft"]),
-    ("finance",      ["refund", "invoice", "billing", "stripe", "revenue", "cost", "payment"]),
-    ("engineering",  ["code", "deploy", "build", "debug", "test", "ship", "api", "bug"]),
-    ("operations",   ["schedule", "calendar", "meeting", "task", "project", "coordinate"]),
+    ("github", ["github", "commit", "pr ", "pull request", "repository", "git", "branch"]),
+    ("email", ["email", "reply", "inbox", "mail", "send", "draft", "message"]),
+    ("research", ["research", "find", "lookup", "analyze", "competitor", "market", "data"]),
+    ("content", ["write", "blog", "post", "tweet", "linkedin", "content", "copy", "draft"]),
+    ("finance", ["refund", "invoice", "billing", "stripe", "revenue", "cost", "payment"]),
+    ("engineering", ["code", "deploy", "build", "debug", "test", "ship", "api", "bug"]),
+    ("operations", ["schedule", "calendar", "meeting", "task", "project", "coordinate"]),
 ]
 
 
@@ -57,11 +57,12 @@ def classify_task_type(query: str) -> str:
 # Memory result container
 # ---------------------------------------------------------------------------------------
 
+
 @dataclass
 class MemoryResult:
-    memory_type: str          # "semantic" | "episodic" | "style"
+    memory_type: str  # "semantic" | "episodic" | "style"
     records: list[Any] = field(default_factory=list)
-    formatted: str = ""       # human-readable rendering
+    formatted: str = ""  # human-readable rendering
 
     def to_prompt_block(self) -> str:
         if not self.records:
@@ -73,6 +74,7 @@ class MemoryResult:
 # Combined context formatter
 # ---------------------------------------------------------------------------------------
 
+
 def format_combined_context(results: list[MemoryResult]) -> str:
     """Combine heterogeneous memory results into a single context string for prompt injection."""
     sections = [r.to_prompt_block() for r in results if r.records]
@@ -82,6 +84,7 @@ def format_combined_context(results: list[MemoryResult]) -> str:
 # ---------------------------------------------------------------------------------------
 # Write queue item
 # ---------------------------------------------------------------------------------------
+
 
 @dataclass
 class _WriteItem:
@@ -93,6 +96,7 @@ class _WriteItem:
 # ---------------------------------------------------------------------------------------
 # SharedMemoryStore
 # ---------------------------------------------------------------------------------------
+
 
 class SharedMemoryStore:
     """Sole interface for all memory read/write operations by agents.
@@ -182,14 +186,15 @@ class SharedMemoryStore:
                 top_k=top_k,
             )
             formatted = "\n".join(
-                f"- [{r.metadata.get('agent_role','?')}] {r.text[:200]}"
-                for r in semantic_records
+                f"- [{r.metadata.get('agent_role', '?')}] {r.text[:200]}" for r in semantic_records
             )
-            results.append(MemoryResult(
-                memory_type="semantic",
-                records=semantic_records,
-                formatted=formatted or "(no relevant semantic memories)",
-            ))
+            results.append(
+                MemoryResult(
+                    memory_type="semantic",
+                    records=semantic_records,
+                    formatted=formatted or "(no relevant semantic memories)",
+                )
+            )
 
         # Episodic layer
         if "episodic" in memory_types:
@@ -204,20 +209,24 @@ class SharedMemoryStore:
                     limit=top_k,
                 )
             formatted = "\n".join(r.format() for r in episodic_records)
-            results.append(MemoryResult(
-                memory_type="episodic",
-                records=episodic_records,
-                formatted=formatted or "(no recent similar tasks)",
-            ))
+            results.append(
+                MemoryResult(
+                    memory_type="episodic",
+                    records=episodic_records,
+                    formatted=formatted or "(no recent similar tasks)",
+                )
+            )
 
         # Style layer
         if "style" in memory_types:
             formatted = self._style.format()
-            results.append(MemoryResult(
-                memory_type="style",
-                records=[],
-                formatted=formatted,
-            ))
+            results.append(
+                MemoryResult(
+                    memory_type="style",
+                    records=[],
+                    formatted=formatted,
+                )
+            )
 
         return format_combined_context(results)
 
@@ -234,11 +243,13 @@ class SharedMemoryStore:
         """Enqueue a memory write. Write happens asynchronously."""
         if not self._started:
             await self.start()
-        await self._write_queue.put(_WriteItem(
-            memory_type=memory_type,
-            content=content,
-            project_id=project_id,
-        ))
+        await self._write_queue.put(
+            _WriteItem(
+                memory_type=memory_type,
+                content=content,
+                project_id=project_id,
+            )
+        )
 
     async def write_semantic(
         self,
@@ -318,14 +329,16 @@ class SharedMemoryStore:
     def delete_all_memories(self) -> dict[str, int]:
         episodic_count = self._episodic.delete_older_than(days=0) or 0
         semantic_count = self._semantic.delete_all()
-        self._style.update_style({
-            "tone": "semi-formal",
-            "sentence_length": "medium",
-            "first_person": "I",
-            "signature_phrases": [],
-            "greeting_style": "Hi [Name],",
-            "signoff_style": "Cheers",
-        })
+        self._style.update_style(
+            {
+                "tone": "semi-formal",
+                "sentence_length": "medium",
+                "first_person": "I",
+                "signature_phrases": [],
+                "greeting_style": "Hi [Name],",
+                "signoff_style": "Cheers",
+            }
+        )
         return {"episodic_deleted": episodic_count, "semantic_deleted": semantic_count}
 
     def episodic_count(self, project_id: str | None = None) -> int:

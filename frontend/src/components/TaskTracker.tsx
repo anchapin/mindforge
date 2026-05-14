@@ -11,7 +11,7 @@ export function TaskTracker() {
     refetchInterval: 10_000,
   });
 
-  const { setTasks, setActiveTask } = useTaskStore();
+  const { setTasks: _setTasks, setActiveTask } = useTaskStore();
 
   const grouped = {
     running: tasks.filter((t) => ["running", "executing"].includes(t.status)),

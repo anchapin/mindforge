@@ -31,6 +31,7 @@ class EmailFetchTool(BaseTool):  # type: ignore[override]
 
     async def execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
         import asyncio
+
         start = time.monotonic()
 
         host = kwargs.get("host", "imap.gmail.com")
@@ -47,26 +48,38 @@ class EmailFetchTool(BaseTool):  # type: ignore[override]
                 if action == "recent":
                     _, msgs = mail.search(None, "ALL")
                     msg_ids = msgs[0].split()
-                    recent = msg_ids[-kwargs.get("limit", 20):] if msg_ids else []
+                    recent = msg_ids[-kwargs.get("limit", 20) :] if msg_ids else []
                     emails = []
                     for mid in reversed(recent):
                         _, data = mail.fetch(mid, "(RFC822)")
                         msg = email.message_from_bytes(data[0][1])
-                        emails.append({
-                            "from": _decode_header_value(msg.get("From", "")),
-                            "subject": _decode_header_value(msg.get("Subject", "")),
-                            "date": msg.get("Date", ""),
-                            "body": self._extract_body(msg),
-                        })
+                        emails.append(
+                            {
+                                "from": _decode_header_value(msg.get("From", "")),
+                                "subject": _decode_header_value(msg.get("Subject", "")),
+                                "date": msg.get("Date", ""),
+                                "body": self._extract_body(msg),
+                            }
+                        )
                     mail.logout()
-                    return ToolResult(success=True, data={"emails": emails}, latency_ms=(time.monotonic() - start) * 1000)
+                    return ToolResult(
+                        success=True,
+                        data={"emails": emails},
+                        latency_ms=(time.monotonic() - start) * 1000,
+                    )
                 else:
                     mail.logout()
-                    return ToolResult(success=False, error=f"Unknown action: {action}", latency_ms=(time.monotonic() - start) * 1000)
+                    return ToolResult(
+                        success=False,
+                        error=f"Unknown action: {action}",
+                        latency_ms=(time.monotonic() - start) * 1000,
+                    )
 
             except Exception as exc:
                 logger.exception("Email fetch error")
-                return ToolResult(success=False, error=str(exc), latency_ms=(time.monotonic() - start) * 1000)
+                return ToolResult(
+                    success=False, error=str(exc), latency_ms=(time.monotonic() - start) * 1000
+                )
 
         return await asyncio.get_event_loop().run_in_executor(None, _sync_fetch)
 

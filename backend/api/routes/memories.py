@@ -81,6 +81,7 @@ def get_episodic(
 @router.post("/episodic")
 async def add_episodic(payload: EpisodicAdd, memory: SharedMemoryStore = Depends(memory_dep)):
     from ...memory.episodic import EpisodicMemory
+
     record = EpisodicMemory(
         id=str(uuid.uuid4()),
         project_id=payload.project_id,
