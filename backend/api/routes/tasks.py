@@ -18,6 +18,8 @@ from pydantic import BaseModel
 from ...agents.supervisor import SupervisorRunner
 from ...memory.episodic import EpisodicMemory
 from ...memory.store import SharedMemoryStore
+from ...skills.trigger import trigger_skill
+from ...skills.executor import execute_skill
 from ..deps import DB_PATH, db_dep, get_ws_manager, memory_dep
 
 router = APIRouter(prefix="/api/tasks", tags=["tasks"])
@@ -98,21 +100,57 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
     conn.close()
 
     try:
-        runner = SupervisorRunner(memory)
-        result = await runner.run(
-            task_description=description,
-            task_id=task_id,
-            project_id=project_id,
-        )
-        final_status = "completed" if result.error is None else "failed"
+        # Try to trigger a skill first (SPEC.md Section 2.3)
+        matched_skill = await trigger_skill(description)
+
+        if matched_skill is not None:
+            # Skill matched — execute it through the DAG
+            from ...llm.router import LLMRouter
+            from ...skills.executor import execute_skill
+            from ...tools.registry import ToolRegistry
+
+            llm_router = LLMRouter()
+            tools = ToolRegistry()
+
+            skill_result = await execute_skill(
+                skill=matched_skill,
+                task_id=task_id,
+                llm_complete=llm_router.complete,
+                tools=tools,
+            )
+
+            # Map skill result to agent result
+            final_status = "completed" if skill_result.status in ("completed", "draft") else "failed"
+            result_context = {
+                "skill_id": matched_skill.id,
+                "task_type": "skill",
+                "current_node": skill_result.current_node,
+                "draft_content": skill_result.draft_content,
+            }
+            agent_role = matched_skill.agent_role or "skill-executor"
+            result_summary = {"status": skill_result.status, "nodes_completed": skill_result.nodes_completed}
+            skill_error = skill_result.error
+        else:
+            # No skill matched — fall back to supervisor
+            runner = SupervisorRunner(memory)
+            result = await runner.run(
+                task_description=description,
+                task_id=task_id,
+                project_id=project_id,
+            )
+            final_status = "completed" if result.error is None else "failed"
+            result_context = result.context or {}
+            agent_role = result.agent_role
+            result_summary = result.result or {}
+            skill_error = result.error
 
         record = EpisodicMemory(
             id=str(uuid.uuid4()),
             project_id=project_id,
             task_id=task_id,
-            task_type=result.context.get("task_type", "general"),
-            agent_role=result.agent_role,
-            summary=result.result.get("summary", description) if result.result else description,
+            task_type=result_context.get("task_type", "general"),
+            agent_role=agent_role,
+            summary=result_summary.get("summary", description) if result_summary else description,
             outcome_status=final_status,
             created_at=datetime.utcnow(),
         )
@@ -122,16 +160,16 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
         conn.execute(
             "UPDATE tasks SET status = ?, updated_at = ?, completed_at = ?, context = ? WHERE id = ?",
             (final_status, datetime.utcnow().isoformat(), datetime.utcnow().isoformat(),
-             json.dumps(result.context), task_id),
+             json.dumps(result_context), task_id),
         )
         conn.commit()
         conn.close()
 
         ws = get_ws_manager()
         if final_status == "completed":
-            await ws.send_task_completed(task_id, result.result or {})
+            await ws.send_task_completed(task_id, result_summary or {})
         else:
-            await ws.send_task_failed(task_id, result.error or "unknown", False)
+            await ws.send_task_failed(task_id, skill_error or "unknown", False)
 
     except Exception as exc:
         import traceback

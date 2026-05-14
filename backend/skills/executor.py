@@ -245,7 +245,7 @@ async def _execute_dag(
 
         # Evaluate outgoing edges and enqueue next nodes
         for edge in graph.edges:
-            if edge.get("from_node") == node.id:
+            if edge.get("from") == node.id:
                 if _evaluate_condition(edge.get("condition", ""), ctx.scratch):
                     next_node = node_map.get(edge.get("to", ""))
                     if next_node and next_node.id not in ctx.nodes_completed:
@@ -343,7 +343,14 @@ async def execute_skill_continue(
 
         ctx.node_id = node.id
 
-        if node.requires_approval:
+        # Skip approval check for the node we just got approval for.
+        # We are resuming FROM ctx.node_id after approval — must execute, not re-pause.
+        already_approved = (
+            node.requires_approval
+            and node.id == ctx.node_id
+            and ctx.node_id in [r.node_id for r in ctx.approval_history]
+        )
+        if node.requires_approval and not already_approved:
             return SkillResult(
                 skill_id=ctx.skill.id,
                 skill_version=ctx.skill.version,
@@ -372,7 +379,7 @@ async def execute_skill_continue(
             )
 
         for edge in graph.edges:
-            if edge.get("from_node") == node.id:
+            if edge.get("from") == node.id:
                 if _evaluate_condition(edge.get("condition", ""), ctx.scratch):
                     next_node = node_map.get(edge.get("to", ""))
                     if next_node and next_node.id not in ctx.nodes_completed:
