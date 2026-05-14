@@ -4,18 +4,23 @@ FROM python:3.12-slim AS builder
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential libffi-dev curl \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
 
+# Install into /install with cache — cache stays in builder layer
+# BuildKit mount caches survive between runs if buildx cache is used
 COPY backend/ /tmp/backend/
-RUN pip install --no-cache-dir --prefix=/install /tmp/backend/
+RUN pip install --no-cache-dir --prefix=/install /tmp/backend/ \
+    && find /root -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
 
 # ── runtime stage ────────────────────────────────────────────────────────────
 FROM python:3.12-slim
 
-RUN groupadd -r appuser && useradd -r -g appuser appuser
+RUN groupadd -r appuser && useradd -r -g appuser appuser \
+    && rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/* /root/.cache/*
 WORKDIR /app
 
 COPY --from=builder /install/lib/python3.12/site-packages /usr/local/lib/python3.12/site-packages/
+COPY --from=builder /install/bin /usr/local/bin/
 COPY backend/ /app/backend/
 
 RUN chmod 755 /app && mkdir -p /app/data /app/logs && chown appuser:appuser /app/data /app/logs
