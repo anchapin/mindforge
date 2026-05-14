@@ -27,13 +27,13 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------------------
 
 TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
-    ("github",      ["github", "commit", "pr ", "pull request", "repository", "git"]),
-    ("email",       ["email", "reply", "inbox", "mail", "send", "draft"]),
-    ("research",    ["research", "find", "look up", "lookup", "analyze", "competitor", "market"]),
-    ("finance",     ["refund", "invoice", "billing", "stripe", "revenue", "cost"]),
+    ("github", ["github", "commit", "pr ", "pull request", "repository", "git"]),
+    ("email", ["email", "reply", "inbox", "mail", "send", "draft"]),
+    ("research", ["research", "find", "look up", "lookup", "analyze", "competitor", "market"]),
+    ("finance", ["refund", "invoice", "billing", "stripe", "revenue", "cost"]),
     ("engineering", ["code", "deploy", "build", "debug", "ship", "unit test", "auth module"]),
-    ("operations",  ["schedule", "calendar", "meeting", "task", "project", "board"]),
-    ("content",     ["write", "blog", "post", "tweet", "linkedin", "copy"]),
+    ("operations", ["schedule", "calendar", "meeting", "task", "project", "board"]),
+    ("content", ["write", "blog", "post", "tweet", "linkedin", "copy"]),
 ]
 
 
@@ -54,9 +54,11 @@ def classify_task_type(query: str) -> str:
 # Supervisor state
 # ---------------------------------------------------------------------------------------
 
+
 @dataclass
 class AgentState:
     """LangGraph state for the supervisor workflow."""
+
     current_task: str = ""
     task_id: str = ""
     project_id: str = ""
@@ -71,6 +73,7 @@ class AgentState:
     def model_copy(self, update: dict[str, Any]) -> AgentState:
         """Shallow copy with field updates."""
         import copy
+
         new_state = copy.copy(self)
         for k, v in update.items():
             setattr(new_state, k, v)
@@ -80,6 +83,7 @@ class AgentState:
 # ---------------------------------------------------------------------------------------
 # Agent dispatch
 # ---------------------------------------------------------------------------------------
+
 
 async def _run_agent(
     agent_role: str,
@@ -104,6 +108,7 @@ async def _run_agent(
 # Supervisor node functions
 # ---------------------------------------------------------------------------------------
 
+
 def supervisor_node(state: AgentState) -> AgentState:
     """Router node — decides which specialist agent handles the task.
 
@@ -114,17 +119,22 @@ def supervisor_node(state: AgentState) -> AgentState:
 
     logger.info(
         "Supervisor routing: task_id=%s task_type=%s -> %s (confidence=%.2f)",
-        state.task_id, task_type, route.agent_role, route.confidence,
+        state.task_id,
+        task_type,
+        route.agent_role,
+        route.confidence,
     )
 
-    return state.model_copy(update={
-        "agent_role": route.agent_role,
-        "context": {
-            **state.context,
-            "task_type": task_type,
-            "routing_confidence": route.confidence,
-        },
-    })
+    return state.model_copy(
+        update={
+            "agent_role": route.agent_role,
+            "context": {
+                **state.context,
+                "task_type": task_type,
+                "routing_confidence": route.confidence,
+            },
+        }
+    )
 
 
 async def specialist_node(
@@ -152,20 +162,26 @@ async def specialist_node(
 
         logger.info(
             "Specialist completed: task_id=%s agent=%s result=%s",
-            state.task_id, state.agent_role, agent_result.get("summary", ""),
+            state.task_id,
+            state.agent_role,
+            agent_result.get("summary", ""),
         )
 
-        return state.model_copy(update={
-            "memory_context": memory_context,
-            "result": agent_result,
-            "messages": state.messages + [
-                {"role": state.agent_role, "content": agent_result.get("result", "")},
-            ],
-        })
+        return state.model_copy(
+            update={
+                "memory_context": memory_context,
+                "result": agent_result,
+                "messages": state.messages
+                + [
+                    {"role": state.agent_role, "content": agent_result.get("result", "")},
+                ],
+            }
+        )
     except Exception as exc:
         logger.exception(
             "Specialist error: task_id=%s agent=%s",
-            state.task_id, state.agent_role,
+            state.task_id,
+            state.agent_role,
         )
         return state.model_copy(update={"error": str(exc)})
 
@@ -174,17 +190,19 @@ async def specialist_node(
 # Layer 3 — Approval gate helpers (§3b.8)
 # ---------------------------------------------------------------------------------------
 
-_HIGH_STAKES_ACTIONS: frozenset[str] = frozenset([
-    "send_email",
-    "send_email_reply",
-    "github_push",
-    "github_create_pr",
-    "github_merge_pr",
-    "stripe_refund",
-    "stripe_payment",
-    "delete_memory",
-    "delete_task",
-])
+_HIGH_STAKES_ACTIONS: frozenset[str] = frozenset(
+    [
+        "send_email",
+        "send_email_reply",
+        "github_push",
+        "github_create_pr",
+        "github_merge_pr",
+        "stripe_refund",
+        "stripe_payment",
+        "delete_memory",
+        "delete_task",
+    ]
+)
 
 
 def is_high_stakes_action(action: str) -> bool:
@@ -235,6 +253,7 @@ def should_continue(state: AgentState) -> Literal["supervisor", END]:  # type: i
 # Graph builder
 # ---------------------------------------------------------------------------------------
 
+
 def build_supervisor_graph(
     memory_store: SharedMemoryStore,
     checkpointer_path: str | None = None,
@@ -264,9 +283,6 @@ def build_supervisor_graph(
         # SqliteSaver (sync) does NOT support async ainvoke() — must use AsyncSqliteSaver.
         # We must do the async connection + compile in a sync-safe way:
         try:
-            import aiosqlite
-            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
             # aiosqlite.connect() is a coroutine — resolve it at graph-building time.
             # Since both loop.run_until_complete() and asyncio.run() fail when
             # called from within an existing event loop (pytest async context),
@@ -275,14 +291,15 @@ def build_supervisor_graph(
             # synchronous operation at startup.
             import threading
 
+            import aiosqlite
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
             conn_holder: list[aiosqlite.Connection | None] = [None]
 
             def _connect():
                 tloop = asyncio.new_event_loop()
                 try:
-                    conn_holder[0] = tloop.run_until_complete(
-                        aiosqlite.connect(checkpointer_path)
-                    )
+                    conn_holder[0] = tloop.run_until_complete(aiosqlite.connect(checkpointer_path))
                 finally:
                     tloop.close()
 
@@ -306,6 +323,7 @@ def build_supervisor_graph(
 # ---------------------------------------------------------------------------------------
 # Supervisor runner
 # ---------------------------------------------------------------------------------------
+
 
 class SupervisorRunner:
     """Runs the supervisor graph for a given task."""
@@ -351,7 +369,9 @@ class SupervisorRunner:
 
         logger.info(
             "Supervisor run started: task_id=%s project_id=%s skill=%s",
-            tid, project_id, skill_name,
+            tid,
+            project_id,
+            skill_name,
         )
 
         try:

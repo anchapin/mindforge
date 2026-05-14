@@ -14,12 +14,15 @@ import pytest
 
 # Patch os.makedirs BEFORE any backend imports happen
 _original_makedirs = os.makedirs
+
+
 def _patched_makedirs(path, *args, **kwargs):
     if isinstance(path, pathlib.Path):
         path = str(path)
     if str(path).startswith("/app"):
         return
     return _original_makedirs(path, *args, **kwargs)
+
 
 os.makedirs = _patched_makedirs  # type: ignore[assignment]
 
@@ -46,15 +49,45 @@ def _init_test_db():
     """)
     conn.execute(
         "INSERT INTO tasks (id, skill_id, status, task_type, project_id, description, context, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("test-task-1", None, "pending", "general", None, "do test action", "{}", "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
+        (
+            "test-task-1",
+            None,
+            "pending",
+            "general",
+            None,
+            "do test action",
+            "{}",
+            "2026-01-01T00:00:00",
+            "2026-01-01T00:00:00",
+        ),
     )
     conn.execute(
         "INSERT INTO tasks (id, skill_id, status, task_type, project_id, description, context, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("test-task-2", None, "pending", "general", None, "test something", "{}", "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
+        (
+            "test-task-2",
+            None,
+            "pending",
+            "general",
+            None,
+            "test something",
+            "{}",
+            "2026-01-01T00:00:00",
+            "2026-01-01T00:00:00",
+        ),
     )
     conn.execute(
         "INSERT INTO tasks (id, skill_id, status, task_type, project_id, description, context, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("test-task-3", None, "pending", "general", None, "generic task", "{}", "2026-01-01T00:00:00", "2026-01-01T00:00:00"),
+        (
+            "test-task-3",
+            None,
+            "pending",
+            "general",
+            None,
+            "generic task",
+            "{}",
+            "2026-01-01T00:00:00",
+            "2026-01-01T00:00:00",
+        ),
     )
     conn.commit()
     conn.close()
@@ -98,7 +131,9 @@ async def test_execute_task_calls_trigger_skill_with_description():
         )
 
     # This is the P0 bug: trigger_skill is never called
-    assert len(trigger_called_with) == 1, f"trigger_skill was called {len(trigger_called_with)} times, expected 1. Call args: {trigger_called_with}"
+    assert len(trigger_called_with) == 1, (
+        f"trigger_skill was called {len(trigger_called_with)} times, expected 1. Call args: {trigger_called_with}"
+    )
     assert trigger_called_with[0] == "do test action"
 
 
@@ -149,7 +184,9 @@ async def test_execute_task_calls_execute_skill_when_skill_matches():
         )
 
     # execute_skill should be called, NOT supervisor.run
-    assert len(execute_skill_called) == 1, f"execute_skill called {len(execute_skill_called)} times, expected 1. supervisor was called instead."
+    assert len(execute_skill_called) == 1, (
+        f"execute_skill called {len(execute_skill_called)} times, expected 1. supervisor was called instead."
+    )
     assert execute_skill_called[0] == sample_skill.id
 
 

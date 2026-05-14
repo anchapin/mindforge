@@ -8,11 +8,8 @@ Tests:
 Run: pytest backend/tests/integration/test_skill_trigger.py -v
 """
 
-import json
-import sqlite3
 import uuid
-from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -23,8 +20,8 @@ class TestSkillTriggerInTaskExecution:
     @pytest.mark.asyncio
     async def test_trigger_skill_keyword_match_fires_for_billing_task(self):
         """Task with 'refund' in description matches subscription-refund skill via keyword."""
-        from backend.skills.trigger import trigger_skill
         from backend.skills.registry import SkillRegistry
+        from backend.skills.trigger import trigger_skill
 
         registry = SkillRegistry()
         registry.load_all()
@@ -38,9 +35,7 @@ class TestSkillTriggerInTaskExecution:
             "trigger_skill returned None for task with 'refund' keyword. "
             "Expected subscription-refund skill to match via keyword trigger."
         )
-        assert skill.id == "subscription-refund", (
-            f"Expected subscription-refund, got {skill.id}"
-        )
+        assert skill.id == "subscription-refund", f"Expected subscription-refund, got {skill.id}"
 
     @pytest.mark.asyncio
     async def test_execute_skill_follows_edges_correctly(self):
@@ -51,7 +46,6 @@ class TestSkillTriggerInTaskExecution:
         Result: DAG completes without advancing past the first node.
         """
         from backend.skills.executor import execute_skill
-        from backend.skills.models import Skill, SkillNode, ExecutionGraph
         from backend.skills.registry import SkillRegistry
 
         registry = SkillRegistry()
@@ -159,8 +153,7 @@ class TestExecuteSkillEdgeTraversal:
         assert "from_node" not in graph.edges[0]
 
         # Now verify _execute_dag uses edge.get("from") correctly
-        from backend.skills.executor import _evaluate_condition, _execute_dag
-        from backend.skills.models import Skill, SkillExecutionContext
+        from backend.skills.executor import _evaluate_condition
 
         # Verify _evaluate_condition works with "a.success" style conditions
         scratch = {"a": {"status": "success"}}

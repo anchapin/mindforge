@@ -102,11 +102,7 @@ def filter_memory_for_prompt(text: str) -> MemoryFilterResult:
             text = pattern.sub("[instruction removed]", text)
 
     # Also run the soft weighted patterns — strip if cumulative risk would be high
-    soft_risk = sum(
-        weight
-        for p, weight in INJECTION_WEIGHT_PATTERNS
-        if p.search(text)
-    )
+    soft_risk = sum(weight for p, weight in INJECTION_WEIGHT_PATTERNS if p.search(text))
     if soft_risk > 0.6:
         # Strip the soft patterns too
         for pattern, _ in INJECTION_WEIGHT_PATTERNS:
@@ -378,8 +374,7 @@ def filter_memories_with_gliguard(
 
         if not gl_result.is_safe:
             logger.warning(
-                "GLiGuard flagged memory record %s as unsafe: "
-                "jailbreak=%s toxicity=%s",
+                "GLiGuard flagged memory record %s as unsafe: jailbreak=%s toxicity=%s",
                 record.get("id", "?"),
                 gl_result.jailbreak_labels,
                 gl_result.toxicity_labels,

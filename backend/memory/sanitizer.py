@@ -18,11 +18,13 @@ from enum import Enum
 # Content source classification
 # ---------------------------------------------------------------------------------------
 
+
 class ContentSource(str, Enum):
     """Trust level of the content origin."""
-    HUMAN = "human"               # Direct user input — always trusted
-    INTEGRATION = "integration"   # Email, scrape, calendar — untrusted
-    SKILL_OUTPUT = "skill_output" # Agent-generated — low trust
+
+    HUMAN = "human"  # Direct user input — always trusted
+    INTEGRATION = "integration"  # Email, scrape, calendar — untrusted
+    SKILL_OUTPUT = "skill_output"  # Agent-generated — low trust
 
 
 # ---------------------------------------------------------------------------------------
@@ -47,8 +49,8 @@ INJECTION_PATTERNS: list[re.Pattern] = [
     re.compile(r"pretend\s+you\s+are\s+", re.I),
     re.compile(r"as\s+an?\s+(AI|LLM|language model)", re.I),
     # Base64 / obfuscation — common in evasion
-    re.compile(r"^[A-Za-z0-9+/]{64,}={0,2}$"),   # Long base64 strings
-    re.compile(r"\\x[0-9a-f]{2}", re.I),          # Hex-encoded shell
+    re.compile(r"^[A-Za-z0-9+/]{64,}={0,2}$"),  # Long base64 strings
+    re.compile(r"\\x[0-9a-f]{2}", re.I),  # Hex-encoded shell
 ]
 
 # Soft patterns — weighted, threshold-based
@@ -66,10 +68,11 @@ INJECTION_WEIGHT_PATTERNS: list[tuple[re.Pattern, float]] = [
 # Risk classification
 # ---------------------------------------------------------------------------------------
 
+
 @dataclass
 class InjectionCheckResult:
     is_suspect: bool
-    risk_score: float          # 0.0 (safe) → 1.0 (clear injection)
+    risk_score: float  # 0.0 (safe) → 1.0 (clear injection)
     matched_patterns: list[str]
     source: ContentSource
 
@@ -87,7 +90,9 @@ def classify_injection_risk(text: str, source: ContentSource) -> InjectionCheckR
     HUMAN source is always trusted — returns safe result immediately.
     """
     if source == ContentSource.HUMAN:
-        return InjectionCheckResult(is_suspect=False, risk_score=0.0, matched_patterns=[], source=source)
+        return InjectionCheckResult(
+            is_suspect=False, risk_score=0.0, matched_patterns=[], source=source
+        )
 
     matched: list[str] = []
 
@@ -120,6 +125,7 @@ def classify_injection_risk(text: str, source: ContentSource) -> InjectionCheckR
 # ---------------------------------------------------------------------------------------
 # Sanitization
 # ---------------------------------------------------------------------------------------
+
 
 @dataclass
 class SanitizationResult:

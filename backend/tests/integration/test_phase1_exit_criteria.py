@@ -31,6 +31,7 @@ import pytest
 def _make_mock_emb(texts: list[str]) -> list[list[float]]:
     """Deterministic mock: SHA256(text) → unit vector in 768-dim space."""
     import hashlib
+
     results = []
     for t in texts:
         h = hashlib.sha256(t.encode()).digest()
@@ -50,6 +51,7 @@ magic_mock_emb = MagicMock(side_effect=_mock_emb_sync)
 # 1. test_langgraph_checkpointer_resume
 # --------------------------------------------------------------------------------------
 
+
 class TestLangGraphCheckpointerResume:
     """Interrupt a supervisor run mid-execution and resume from checkpoint."""
 
@@ -57,6 +59,7 @@ class TestLangGraphCheckpointerResume:
         """Return True if langgraph-checkpoint-sqlite is installed."""
         try:
             from langgraph.checkpoint.sqlite import SqliteSaver  # noqa: F401
+
             return True
         except ImportError:
             return False
@@ -68,7 +71,9 @@ class TestLangGraphCheckpointerResume:
         RED phase: This test fails when langgraph-checkpoint-sqlite is not installed
         (ImportError) or when the code falls through to MemorySaver.
         """
-        pytest.importorskip("langgraph.checkpoint.sqlite.aio", reason="langgraph-checkpoint-sqlite not installed")
+        pytest.importorskip(
+            "langgraph.checkpoint.sqlite.aio", reason="langgraph-checkpoint-sqlite not installed"
+        )
 
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
@@ -105,7 +110,9 @@ class TestLangGraphCheckpointerResume:
         Start a task, invoke the graph, then invoke again with same thread_id.
         The second invocation should resume from the checkpoint (same task_id in state).
         """
-        pytest.importorskip("langgraph.checkpoint.sqlite.aio", reason="langgraph-checkpoint-sqlite not installed")
+        pytest.importorskip(
+            "langgraph.checkpoint.sqlite.aio", reason="langgraph-checkpoint-sqlite not installed"
+        )
 
         from backend.agents.supervisor import AgentState, build_supervisor_graph
 
@@ -201,6 +208,7 @@ class TestLangGraphCheckpointerResume:
 # 2. test_task_stores_episodic_on_completion
 # --------------------------------------------------------------------------------------
 
+
 class TestTaskStoresEpisodicOnCompletion:
     """Verify EpisodicMemoryEntry written to PGLite on task completion."""
 
@@ -235,6 +243,7 @@ class TestTaskStoresEpisodicOnCompletion:
 # --------------------------------------------------------------------------------------
 # 3. test_draft_approval_flow
 # --------------------------------------------------------------------------------------
+
 
 class TestDraftApprovalFlow:
     """Full draft→approve and draft→reject flow."""
@@ -297,7 +306,9 @@ class TestDraftApprovalFlow:
         )
         task_db.commit()
 
-        row = task_db.execute("SELECT status, context FROM task WHERE id = ?", (task_id,)).fetchone()
+        row = task_db.execute(
+            "SELECT status, context FROM task WHERE id = ?", (task_id,)
+        ).fetchone()
         assert row["status"] == "failed"
         ctx_loaded = json.loads(row["context"])
         assert ctx_loaded["rejection_feedback"] == "Not good enough"
@@ -320,6 +331,7 @@ class TestDraftApprovalFlow:
 # --------------------------------------------------------------------------------------
 # 4. test_websocket_messages
 # --------------------------------------------------------------------------------------
+
 
 class TestWebSocketMessages:
     """Verify WS messages for task_created, approval_resolved, task_completed."""
@@ -384,6 +396,7 @@ class TestWebSocketMessages:
 # --------------------------------------------------------------------------------------
 # 5. test_task_lifecycle
 # --------------------------------------------------------------------------------------
+
 
 class TestTaskLifecycle:
     """Full state machine: pending → running → draft → executing → completed."""
@@ -520,6 +533,7 @@ class TestTaskLifecycle:
 # 6. test_chroma_semantic_memory
 # --------------------------------------------------------------------------------------
 
+
 class TestChromaSemanticMemory:
     """write_semantic + search with HMAC, TTL, project scoping."""
 
@@ -538,6 +552,7 @@ class TestChromaSemanticMemory:
 
         async def mock_embed(texts):
             import hashlib
+
             results = []
             for t in texts:
                 h = hashlib.sha256(t.encode()).digest()
@@ -582,6 +597,7 @@ class TestChromaSemanticMemory:
 
         async def mock_embed(texts):
             import hashlib
+
             results = []
             for t in texts:
                 h = hashlib.sha256(t.encode()).digest()
@@ -636,6 +652,7 @@ class TestChromaSemanticMemory:
 # --------------------------------------------------------------------------------------
 # 7. test_pglite_episodic_memory
 # --------------------------------------------------------------------------------------
+
 
 class TestPgliteEpisodicMemory:
     """write_episodic + list_episodes, 180-day retention."""
@@ -712,6 +729,7 @@ class TestPgliteEpisodicMemory:
 # 8. test_hmac_tamper_detection
 # --------------------------------------------------------------------------------------
 
+
 class TestHMACTamperDetection:
     """Tamper with entry bytes, verify rejection."""
 
@@ -727,6 +745,7 @@ class TestHMACTamperDetection:
 
         async def mock_embed(texts):
             import hashlib
+
             results = []
             for t in texts:
                 h = hashlib.sha256(t.encode()).digest()
@@ -741,7 +760,9 @@ class TestHMACTamperDetection:
             mock_instance.__aexit__ = AsyncMock(return_value=None)
             MockClient.return_value = mock_instance
 
-            with patch("backend.memory.embeddings.embed_texts", new=AsyncMock(side_effect=mock_embed)):
+            with patch(
+                "backend.memory.embeddings.embed_texts", new=AsyncMock(side_effect=mock_embed)
+            ):
                 chroma_dir = str(tmp_path / "chroma_hmac")
                 memory = SemanticMemory(chroma_dir=chroma_dir)
 
@@ -785,6 +806,7 @@ class TestHMACTamperDetection:
 # 9. test_integration_clients (GitHub, Stripe, IMAP)
 # --------------------------------------------------------------------------------------
 
+
 class TestIntegrationClients:
     """Mock-based tests for GitHub, Stripe, IMAP tools.
 
@@ -802,8 +824,20 @@ class TestIntegrationClients:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = [
-            {"sha": "abc123", "commit": {"message": "Initial commit", "author": {"name": "Alex", "date": "2026-05-13T10:00:00Z"}}},
-            {"sha": "def456", "commit": {"message": "Add feature", "author": {"name": "Alex", "date": "2026-05-13T11:00:00Z"}}},
+            {
+                "sha": "abc123",
+                "commit": {
+                    "message": "Initial commit",
+                    "author": {"name": "Alex", "date": "2026-05-13T10:00:00Z"},
+                },
+            },
+            {
+                "sha": "def456",
+                "commit": {
+                    "message": "Add feature",
+                    "author": {"name": "Alex", "date": "2026-05-13T11:00:00Z"},
+                },
+            },
         ]
 
         with patch("httpx.AsyncClient") as MockClient:
@@ -880,8 +914,20 @@ class TestIntegrationClients:
         mock_response.status_code = 200
         mock_response.json.return_value = {
             "data": [
-                {"id": "ch_1", "amount": 5000, "currency": "usd", "status": "succeeded", "created": 1715600000},
-                {"id": "ch_2", "amount": 7500, "currency": "usd", "status": "succeeded", "created": 1715601000},
+                {
+                    "id": "ch_1",
+                    "amount": 5000,
+                    "currency": "usd",
+                    "status": "succeeded",
+                    "created": 1715600000,
+                },
+                {
+                    "id": "ch_2",
+                    "amount": 7500,
+                    "currency": "usd",
+                    "status": "succeeded",
+                    "created": 1715601000,
+                },
             ],
         }
 

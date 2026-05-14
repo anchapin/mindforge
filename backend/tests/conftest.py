@@ -4,7 +4,6 @@ This module provides shared fixtures for unit and integration tests.
 See SPEC.md Section 5.6.2 for the full test stack documentation.
 """
 
-import asyncio
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -41,18 +40,14 @@ def chroma_tmp_dir(tmp_path: Path) -> str:
 def mock_openrouter():
     """Pretend OpenRouter that returns fixed responses for routing tests."""
     with patch("openrouter.chat.completions.create") as mock:
-        mock.return_value = MagicMock(
-            choices=[MagicMock(message=MagicMock(content="engineer"))]
-        )
+        mock.return_value = MagicMock(choices=[MagicMock(message=MagicMock(content="engineer"))])
         yield mock
 
 
 @pytest.fixture
 def skill_yaml_valid() -> str:
     """Path to a valid skill YAML for positive tests."""
-    path = (
-        Path(__file__).parent / "fixtures" / "skills" / "valid-github-daily-summary.yaml"
-    )
+    path = Path(__file__).parent / "fixtures" / "skills" / "valid-github-daily-summary.yaml"
     return path.read_text()
 
 

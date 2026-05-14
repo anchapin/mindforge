@@ -47,7 +47,15 @@ def create_integration(payload: IntegrationCreate, db) -> dict:
     db.execute(
         "INSERT INTO integrations (id, app_name, auth_token_enc, permissions, allowed_agents, status, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
-        (integration_id, payload.app_name, encrypted, str(payload.permissions), str(payload.allowed_agents), now, now),
+        (
+            integration_id,
+            payload.app_name,
+            encrypted,
+            str(payload.permissions),
+            str(payload.allowed_agents),
+            now,
+            now,
+        ),
     )
     db.commit()
     return {"id": integration_id, "app_name": payload.app_name, "status": "active"}

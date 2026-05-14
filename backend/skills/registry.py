@@ -56,9 +56,7 @@ def validate_skill_graph(skill_def: dict) -> list[str]:
     for node in nodes:
         if node.get("requires_approval"):
             if not outgoing.get(node["id"]):
-                errors.append(
-                    f"Node '{node['id']}' requires approval but has no outgoing edges"
-                )
+                errors.append(f"Node '{node['id']}' requires approval but has no outgoing edges")
 
     # Rule 3: no cycles
     # A cycle exists iff a node is reachable from itself via directed edges.
@@ -79,9 +77,9 @@ def validate_skill_graph(skill_def: dict) -> list[str]:
             self.on_stack: set[str] = set()
 
         def has_cycle_from(self, start: str, visited: set[str]) -> bool:
-            stack: list[tuple[str, Iterator[str]]] = [(start, iter([
-                e.get("to", "") for e in edges if e.get("from") == start
-            ]))]
+            stack: list[tuple[str, Iterator[str]]] = [
+                (start, iter([e.get("to", "") for e in edges if e.get("from") == start]))
+            ]
             while stack:
                 node_id, neighbors_iter = stack[-1]
                 try:
@@ -96,9 +94,9 @@ def validate_skill_graph(skill_def: dict) -> list[str]:
                     continue
                 visited.add(neighbor)
                 self.on_stack.add(neighbor)
-                stack.append((neighbor, iter([
-                    e.get("to", "") for e in edges if e.get("from") == neighbor
-                ])))
+                stack.append(
+                    (neighbor, iter([e.get("to", "") for e in edges if e.get("from") == neighbor]))
+                )
             return False
 
     if nodes:

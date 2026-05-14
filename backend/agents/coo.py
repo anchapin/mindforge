@@ -78,6 +78,7 @@ Return a JSON object with these exact fields (no others):
             tier=InferenceTier.CLOUD_HEAVY,
         )
         import json
+
         result = json.loads(response)
         logger.info("COO completed: %s", result.get("summary", ""))
         return result
