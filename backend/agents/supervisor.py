@@ -268,13 +268,24 @@ def build_supervisor_graph(
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
             # aiosqlite.connect() is a coroutine — resolve it synchronously
-            # via a blocking event loop. This is safe at graph-building time
-            # (not inside an already-running event loop).
-            loop = asyncio.new_event_loop()
+            # at graph-building time. If we're already inside an async context
+            # (pytest async test), use asyncio.run() which creates a nested loop
+            # with its own干净的 runner; otherwise use loop.run_until_complete().
             try:
-                conn = loop.run_until_complete(aiosqlite.connect(checkpointer_path))
-            finally:
-                loop.close()
+                running_loop = asyncio.get_running_loop()
+            except RuntimeError:
+                running_loop = None
+
+            if running_loop:
+                # Already inside an async context — create our own loop in a
+                # fresh thread runner so we don't interfere with pytest's loop.
+                conn = asyncio.run(aiosqlite.connect(checkpointer_path))
+            else:
+                loop = asyncio.new_event_loop()
+                try:
+                    conn = loop.run_until_complete(aiosqlite.connect(checkpointer_path))
+                finally:
+                    loop.close()
             checkpointer = AsyncSqliteSaver(conn)
             return builder.compile(checkpointer=checkpointer)  # type: ignore[return-value]
         except ImportError:
