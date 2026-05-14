@@ -73,15 +73,11 @@ def validate_skill_graph(skill_data: dict) -> list[str]:
         from_id = edge.get("from")
         to_id = edge.get("to")
         if from_id is not None and from_id not in nodes:
-            raise MissingNodeError(
-                f"Edge references from='{from_id}' which does not exist"
-            )
+            raise MissingNodeError(f"Edge references from='{from_id}' which does not exist")
         if to_id is not None and to_id not in nodes:
-            raise MissingNodeError(
-                f"Edge references to='{to_id}' which does not exist"
-            )
+            raise MissingNodeError(f"Edge references to='{to_id}' which does not exist")
 
-# Build outgoing adjacency map
+    # Build outgoing adjacency map
     outgoing: dict[str, list[str]] = {n["id"]: [] for n in raw_nodes}
     for edge in raw_edges:
         outgoing[edge.get("from", "")].append(edge.get("to", ""))
@@ -93,14 +89,12 @@ def validate_skill_graph(skill_data: dict) -> list[str]:
     for node in raw_nodes:
         node_id = node["id"]
         if node.get("approval") is True and not outgoing.get(node_id):
-            raise ApprovalGateWithNoNext(
-                f"Approval node '{node_id}' has no outgoing edges"
-            )
+            raise ApprovalGateWithNoNext(f"Approval node '{node_id}' has no outgoing edges")
 
     # Rule 1: must be a DAG (no cycles) — iterative DFS with explicit stack.
     # Uses on_stack set to track which nodes are currently on the DFS call stack.
     # A cycle exists iff we encounter a node already on the stack.
-# Self-loops: check each node directly against raw_edges
+    # Self-loops: check each node directly against raw_edges
     for node in raw_nodes:
         for edge in raw_edges:
             frm = edge.get("from", "")
@@ -115,9 +109,9 @@ def validate_skill_graph(skill_data: dict) -> list[str]:
             self.on_stack: set[str] = set()
 
         def has_cycle_from(self, start: str, visited: set[str]) -> bool:
-            stack: list[tuple[str, collections.abc.Iterator[str]]] = [(start, iter([
-                e.get("to", "") for e in raw_edges if e.get("from") == start
-            ]))]
+            stack: list[tuple[str, collections.abc.Iterator[str]]] = [
+                (start, iter([e.get("to", "") for e in raw_edges if e.get("from") == start]))
+            ]
             while stack:
                 node_id, neighbors_iter = stack[-1]
                 try:
@@ -132,9 +126,12 @@ def validate_skill_graph(skill_data: dict) -> list[str]:
                     continue
                 visited.add(neighbor)
                 self.on_stack.add(neighbor)
-                stack.append((neighbor, iter([
-                    e.get("to", "") for e in raw_edges if e.get("from") == neighbor
-                ])))
+                stack.append(
+                    (
+                        neighbor,
+                        iter([e.get("to", "") for e in raw_edges if e.get("from") == neighbor]),
+                    )
+                )
             return False
 
     if raw_nodes:
@@ -200,13 +197,22 @@ VALID_LINEAR_GRAPH = {
 def get_valid_skill_path() -> str:
     """Path to the valid github-daily-summary skill fixture."""
     import pathlib
-    return str(pathlib.Path(__file__).parent.parent / "fixtures" / "skills" / "valid-github-daily-summary.yaml")
+
+    return str(
+        pathlib.Path(__file__).parent.parent
+        / "fixtures"
+        / "skills"
+        / "valid-github-daily-summary.yaml"
+    )
 
 
 def get_cycle_skill_path() -> str:
     """Path to the invalid cycle skill fixture."""
     import pathlib
-    return str(pathlib.Path(__file__).parent.parent / "fixtures" / "skills" / "invalid-cycle-skill.yaml")
+
+    return str(
+        pathlib.Path(__file__).parent.parent / "fixtures" / "skills" / "invalid-cycle-skill.yaml"
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -232,9 +238,7 @@ class TestSkillGraphValidationValid:
         skill = {
             "name": "single-node-skill",
             "execution_graph": {
-                "nodes": [
-                    {"id": "only", "agent": "coo", "goal": "Do one thing", "tools": []}
-                ],
+                "nodes": [{"id": "only", "agent": "coo", "goal": "Do one thing", "tools": []}],
                 "edges": [],
             },
         }

@@ -22,6 +22,7 @@ def _make_fake_emb(texts: list[str], dim: int = 768) -> list[list[float]]:
     This ensures vector search returns exact matches first.
     """
     import hashlib
+
     results: list[list[float]] = []
     for text in texts:
         # Hash the text content to get a deterministic seed
@@ -68,12 +69,13 @@ class TestSemanticMemoryHybridRetrieval:
             "It has a comprehensive standard library. "
             "This tutorial covers the basics of Python."
         )
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)
+        ):
             ids = await sm.add(text=text, project_id="test-project")
         assert len(ids) > 0, "add() returned no IDs — chunking or embedding failed"
         assert sm._bm25_index is not None, (
-            "build_bm25_index() was not called after add() — "
-            "BM25 index is None but should be built"
+            "build_bm25_index() was not called after add() — BM25 index is None but should be built"
         )
 
     @pytest.mark.asyncio
@@ -100,7 +102,9 @@ class TestSemanticMemoryHybridRetrieval:
         async def embed_side_effect(texts: list[str]) -> list[list[float]]:
             return _make_fake_emb(texts)
 
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
+        ):
             for t in all_texts:
                 ids = await sm.add(text=t, project_id="p1")
                 assert len(ids) > 0, f"add() failed for text: {t[:50]}"
@@ -111,7 +115,9 @@ class TestSemanticMemoryHybridRetrieval:
         # Use same embedding as python_text so vector also matches
         query_emb = _make_fake_emb([python_text])[0]
 
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
+        ):
             results = await sm.search(query="Python tutorial", project_id="p1", top_k=3)
 
         assert len(results) > 0, "search() returned no results"
@@ -124,7 +130,9 @@ class TestSemanticMemoryHybridRetrieval:
     async def test_search_without_bm25_falls_back_to_vector(self, sm: SemanticMemory) -> None:
         """When BM25 index is not built, search should still work with vector only."""
         long_text = "Rust is a systems programming language that provides memory safety without garbage collection. It offers zero-cost abstractions and is widely used in high-performance applications."
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)
+        ):
             ids = await sm.add(text=long_text, project_id="p1")
             assert len(ids) > 0, "add() returned no IDs"
 
@@ -137,7 +145,9 @@ class TestSemanticMemoryHybridRetrieval:
         async def embed_side_effect(texts: list[str]) -> list[list[float]]:
             return _make_fake_emb(texts)
 
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
+        ):
             results = await sm.search(query="Rust systems", project_id="p1", top_k=3)
 
         assert len(results) > 0, "search() should fall back to vector when BM25 unavailable"
@@ -165,7 +175,9 @@ class TestSemanticMemoryHybridRetrieval:
         async def embed_side_effect(texts: list[str]) -> list[list[float]]:
             return _make_fake_emb(texts)
 
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
+        ):
             for t in all_texts:
                 ids = await sm.add(text=t, project_id="p1")
                 assert len(ids) > 0, f"add() failed for: {t[:50]}"
@@ -173,7 +185,9 @@ class TestSemanticMemoryHybridRetrieval:
         # Query embedding = same as text_c (shares "Python" and "data science")
         query_emb = _make_fake_emb([text_c])[0]
 
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
+        ):
             results = await sm.search(query="Python programming", project_id="p1", top_k=3)
 
         assert len(results) > 0
@@ -195,7 +209,9 @@ class TestSemanticMemoryHybridRetrieval:
         async def embed_side_effect(texts: list[str]) -> list[list[float]]:
             return _make_fake_emb(texts)
 
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
+        ):
             for i in range(10):
                 ids = await sm.add(text=long_text, project_id="p1")
                 assert len(ids) > 0, f"add() failed for document {i}"
@@ -203,7 +219,9 @@ class TestSemanticMemoryHybridRetrieval:
         # Same embedding as stored text → perfect vector match
         query_emb = _make_fake_emb([long_text])[0]
 
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
+        ):
             results = await sm.search(query="Document", project_id="p1", top_k=3)
 
         assert len(results) == 3, f"top_k=3 should return exactly 3 results, got {len(results)}"
@@ -224,7 +242,9 @@ class TestSemanticMemoryHybridRetrieval:
         async def embed_side_effect(texts: list[str]) -> list[list[float]]:
             return _make_fake_emb(texts)
 
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
+        ):
             ids_a = await sm.add(text=long_text_a, project_id="project-a")
             ids_b = await sm.add(text=long_text_b, project_id="project-b")
             assert len(ids_a) > 0, "add() for project-a returned no IDs"
@@ -233,7 +253,9 @@ class TestSemanticMemoryHybridRetrieval:
         # Use same embedding as project-a text so vector matches that one
         query_emb = _make_fake_emb([long_text_a])[0]
 
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
+        ):
             results = await sm.search(query="tutorial", project_id="project-a", top_k=5)
 
         result_texts = [r.text for r in results]
@@ -259,13 +281,16 @@ class TestSemanticMemoryBM25Index:
             "Deep learning transformer architecture has revolutionized natural language processing and computer vision applications. "
             "The self-attention mechanism enables efficient parallel processing of sequential and spatial data.",
         ]
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)
+        ):
             for t in long_texts:
                 ids = await sm.add(text=t, project_id="x")
                 assert len(ids) > 0, f"add() failed for: {t[:50]}"
 
         assert sm._bm25_index is not None, "BM25 index should be built"
         from rank_bm25 import BM25Okapi
+
         assert isinstance(sm._bm25_index, BM25Okapi), "Index should be BM25Okapi instance"
 
     @pytest.mark.asyncio
@@ -276,14 +301,18 @@ class TestSemanticMemoryBM25Index:
             "This is a test document with sufficient content to produce chunks for BM25 indexing purposes. "
             "It contains multiple sentences with enough tokens to exceed the minimum chunk size threshold."
         )
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)
+        ):
             ids = await sm.add(text=long_text, project_id="x")
             assert len(ids) > 0, "add() returned no IDs"
 
         assert sm._bm25_index is not None
 
         # delete() is synchronous — no await needed
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)
+        ):
             sm.delete(ids[0])
 
         assert sm._bm25_index is None, "BM25 index should be invalidated after delete()"
@@ -298,7 +327,9 @@ class TestSemanticMemoryBM25Index:
             "Document two contains content about data structures and algorithms for testing purposes. "
             "It covers sorting, searching, graph algorithms, and complexity analysis for performance optimization.",
         ]
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)
+        ):
             for t in long_texts:
                 ids = await sm.add(text=t, project_id="x")
                 assert len(ids) > 0, f"add() failed for: {t[:50]}"
@@ -306,7 +337,9 @@ class TestSemanticMemoryBM25Index:
         assert sm._bm25_index is not None
 
         # delete_all() is synchronous — no await needed
-        with patch.object(embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)):
+        with patch.object(
+            embeddings_module, "embed_texts", new=AsyncMock(side_effect=_fake_embed_texts)
+        ):
             sm.delete_all(project_id="x")
 
         assert sm._bm25_index is None, "BM25 index should be invalidated after delete_all()"
