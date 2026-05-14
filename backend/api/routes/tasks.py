@@ -147,9 +147,9 @@ async def _execute_task(task_id: str, description: str, project_id: str | None, 
             id=str(uuid.uuid4()),
             project_id=project_id,
             task_id=task_id,
-            task_type=result_context.get("task_type", "general"),
+            task_type=str(result_context.get("task_type", "general")),  # type: ignore[arg-type]
             agent_role=agent_role,
-            summary=result_summary.get("summary", description) if result_summary else description,
+            summary=str(result_summary.get("summary", description)) if result_summary else description,  # type: ignore[arg-type]
             outcome_status=final_status,
             created_at=datetime.utcnow(),
         )

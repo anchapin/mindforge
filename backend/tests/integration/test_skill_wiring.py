@@ -21,7 +21,7 @@ def _patched_makedirs(path, *args, **kwargs):
         return
     return _original_makedirs(path, *args, **kwargs)
 
-os.makedirs = _patched_makedirs
+os.makedirs = _patched_makedirs  # type: ignore[assignment]
 
 # Use a temp dir + db for tests
 _test_db_dir = tempfile.mkdtemp()
