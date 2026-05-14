@@ -37,7 +37,22 @@ jobs:
           EOF
           touch .env.local
       - run: docker compose --profile test up -d
-      - run: sleep 10  # wait for services
+      - run: |
+          # Poll until chroma is healthy (up to 120s)
+          for i in $(seq 1 24); do
+            if docker exec $(docker compose ps -q chroma 2>/dev/null) \
+               python -c "import httpx; httpx.get('http://127.0.0.1:8000/api/v1/heartbeat').raise_for_status()" 2>/dev/null; then
+              echo "chroma healthy after ${i}0s"
+              break
+            fi
+            if [ $i -eq 24 ]; then
+              echo "chroma failed to become healthy — dumping logs:"
+              docker compose logs chroma
+              exit 1
+            fi
+            sleep 5
+          done
+          echo "Services ready — running tests"
       - run: pytest backend/tests/unit -q --tb=short
       - run: pytest backend/tests/integration -q --tb=short
 
