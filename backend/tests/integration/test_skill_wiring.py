@@ -8,6 +8,9 @@ import os
 import pathlib
 import sqlite3
 import tempfile
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 # Patch os.makedirs BEFORE any backend imports happen
 _original_makedirs = os.makedirs
@@ -19,9 +22,6 @@ def _patched_makedirs(path, *args, **kwargs):
     return _original_makedirs(path, *args, **kwargs)
 
 os.makedirs = _patched_makedirs
-
-import pytest
-from unittest.mock import MagicMock, AsyncMock, patch
 
 # Use a temp dir + db for tests
 _test_db_dir = tempfile.mkdtemp()
@@ -81,19 +81,21 @@ async def test_execute_task_calls_trigger_skill_with_description():
     async def mock_supervisor_run(self, task_description, **kwargs):
         return MagicMock(error=None, context={}, result={}, agent_role="supervisor")
 
-    with patch("backend.api.routes.tasks.trigger_skill", mock_trigger):
-        with patch("backend.api.routes.tasks.SupervisorRunner.run", mock_supervisor_run):
-            with patch("backend.api.deps.DB_PATH", _test_db_path):
-                with patch("backend.api.routes.tasks.DB_PATH", _test_db_path):
-                    mock_memory = MagicMock()
-                    mock_memory.write_episodic = AsyncMock()
+    with (
+        patch("backend.api.routes.tasks.trigger_skill", mock_trigger),
+        patch("backend.api.routes.tasks.SupervisorRunner.run", mock_supervisor_run),
+        patch("backend.api.deps.DB_PATH", _test_db_path),
+        patch("backend.api.routes.tasks.DB_PATH", _test_db_path),
+    ):
+        mock_memory = MagicMock()
+        mock_memory.write_episodic = AsyncMock()
 
-                    await tasks_module._execute_task(
-                        task_id="test-task-1",
-                        description="do test action",
-                        project_id=None,
-                        memory=mock_memory,
-                    )
+        await tasks_module._execute_task(
+            task_id="test-task-1",
+            description="do test action",
+            project_id=None,
+            memory=mock_memory,
+        )
 
     # This is the P0 bug: trigger_skill is never called
     assert len(trigger_called_with) == 1, f"trigger_skill was called {len(trigger_called_with)} times, expected 1. Call args: {trigger_called_with}"
@@ -129,20 +131,22 @@ async def test_execute_task_calls_execute_skill_when_skill_matches():
     async def mock_supervisor_run(self, task_description, **kwargs):
         return MagicMock(error=None)
 
-    with patch("backend.api.routes.tasks.trigger_skill", mock_trigger):
-        with patch("backend.skills.executor.execute_skill", mock_execute_skill):
-            with patch("backend.api.routes.tasks.SupervisorRunner.run", mock_supervisor_run):
-                with patch("backend.api.deps.DB_PATH", _test_db_path):
-                    with patch("backend.api.routes.tasks.DB_PATH", _test_db_path):
-                        mock_memory = MagicMock()
-                        mock_memory.write_episodic = AsyncMock()
+    with (
+        patch("backend.api.routes.tasks.trigger_skill", mock_trigger),
+        patch("backend.skills.executor.execute_skill", mock_execute_skill),
+        patch("backend.api.routes.tasks.SupervisorRunner.run", mock_supervisor_run),
+        patch("backend.api.deps.DB_PATH", _test_db_path),
+        patch("backend.api.routes.tasks.DB_PATH", _test_db_path),
+    ):
+        mock_memory = MagicMock()
+        mock_memory.write_episodic = AsyncMock()
 
-                        await tasks_module._execute_task(
-                            task_id="test-task-2",
-                            description="test something",
-                            project_id=None,
-                            memory=mock_memory,
-                        )
+        await tasks_module._execute_task(
+            task_id="test-task-2",
+            description="test something",
+            project_id=None,
+            memory=mock_memory,
+        )
 
     # execute_skill should be called, NOT supervisor.run
     assert len(execute_skill_called) == 1, f"execute_skill called {len(execute_skill_called)} times, expected 1. supervisor was called instead."
@@ -167,18 +171,20 @@ async def test_execute_task_falls_back_to_supervisor_when_no_skill():
         supervisor_called = True
         return MagicMock(error=None, context={}, result={}, agent_role="supervisor")
 
-    with patch("backend.api.routes.tasks.trigger_skill", mock_trigger):
-        with patch("backend.api.routes.tasks.SupervisorRunner.run", mock_supervisor_run):
-            with patch("backend.api.deps.DB_PATH", _test_db_path):
-                with patch("backend.api.routes.tasks.DB_PATH", _test_db_path):
-                    mock_memory = MagicMock()
-                    mock_memory.write_episodic = AsyncMock()
+    with (
+        patch("backend.api.routes.tasks.trigger_skill", mock_trigger),
+        patch("backend.api.routes.tasks.SupervisorRunner.run", mock_supervisor_run),
+        patch("backend.api.deps.DB_PATH", _test_db_path),
+        patch("backend.api.routes.tasks.DB_PATH", _test_db_path),
+    ):
+        mock_memory = MagicMock()
+        mock_memory.write_episodic = AsyncMock()
 
-                    await tasks_module._execute_task(
-                        task_id="test-task-3",
-                        description="generic task",
-                        project_id=None,
-                        memory=mock_memory,
-                    )
+        await tasks_module._execute_task(
+            task_id="test-task-3",
+            description="generic task",
+            project_id=None,
+            memory=mock_memory,
+        )
 
     assert supervisor_called, "supervisor.run should be called when no skill matches"
