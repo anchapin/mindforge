@@ -264,8 +264,8 @@ def build_supervisor_graph(
         # Since aiosqlite.connect() is async, the graph must be compiled inside an async
         # context. SupervisorRunner.run() handles this by calling _build_graph_async().
         try:
-            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
             import aiosqlite
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
             conn = aiosqlite.connect(checkpointer_path)
             checkpointer = AsyncSqliteSaver(conn)
             return builder.compile(checkpointer=checkpointer)

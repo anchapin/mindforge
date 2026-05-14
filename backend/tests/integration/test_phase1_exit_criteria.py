@@ -14,13 +14,10 @@ From SPEC.md Section 5.1 — Phase 1 must have these tests:
 Run with: pytest backend/tests/integration/ -v
 """
 
-import asyncio
 import json
 import sqlite3
-import tempfile
 import uuid
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -73,8 +70,9 @@ class TestLangGraphCheckpointerResume:
         """
         pytest.importorskip("langgraph.checkpoint.sqlite.aio", reason="langgraph-checkpoint-sqlite not installed")
 
-        from backend.agents.supervisor import build_supervisor_graph, AgentState
         from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        from backend.agents.supervisor import build_supervisor_graph
 
         checkpoint_db = str(tmp_path / "checkpointer.db")
 
@@ -109,7 +107,7 @@ class TestLangGraphCheckpointerResume:
         """
         pytest.importorskip("langgraph.checkpoint.sqlite.aio", reason="langgraph-checkpoint-sqlite not installed")
 
-        from backend.agents.supervisor import build_supervisor_graph, AgentState
+        from backend.agents.supervisor import AgentState, build_supervisor_graph
 
         db_file = tmp_path / "checkpoint_persist.db"
         checkpoint_db = str(db_file)
@@ -156,7 +154,7 @@ class TestLangGraphCheckpointerResume:
         Verifies that LangGraph with SqliteSaver (or MemorySaver fallback) can
         resume a task using the same thread_id and pick up from checkpoint.
         """
-        from backend.agents.supervisor import build_supervisor_graph, AgentState
+        from backend.agents.supervisor import AgentState, build_supervisor_graph
 
         db_file = tmp_path / "checkpoint_async.db"
         checkpoint_db = str(db_file)
@@ -208,7 +206,7 @@ class TestTaskStoresEpisodicOnCompletion:
 
     def test_task_stores_episodic_on_completion(self, tmp_path):
         """Task completion writes an EpisodicMemory record to PGLite."""
-        from backend.memory.episodic import EpisodicMemoryStore, EpisodicMemory
+        from backend.memory.episodic import EpisodicMemory, EpisodicMemoryStore
 
         db_path = str(tmp_path / "test_task.db")
         store = EpisodicMemoryStore(db_path=db_path)
@@ -224,7 +222,7 @@ class TestTaskStoresEpisodicOnCompletion:
             agent_role="coo",
             summary="Test task completed successfully",
             outcome_status="completed",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         store.insert(record)
 
@@ -263,7 +261,7 @@ class TestDraftApprovalFlow:
     def test_draft_approval_flow_approve(self, task_db):
         """Task in draft state → POST /approve → executing."""
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         task_db.execute(
             "INSERT INTO task (id, status, description, context, created_at, updated_at) "
             "VALUES (?, 'draft', ?, '{}', ?, ?)",
@@ -274,7 +272,7 @@ class TestDraftApprovalFlow:
         ctx = {}
         task_db.execute(
             "UPDATE task SET status = 'executing', updated_at = ?, context = ? WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), json.dumps(ctx), task_id),
+            (datetime.now(UTC).isoformat(), json.dumps(ctx), task_id),
         )
         task_db.commit()
 
@@ -284,7 +282,7 @@ class TestDraftApprovalFlow:
     def test_draft_approval_flow_reject(self, task_db):
         """Task in draft state → POST /reject → failed."""
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         task_db.execute(
             "INSERT INTO task (id, status, description, context, created_at, updated_at) "
             "VALUES (?, 'draft', ?, '{}', ?, ?)",
@@ -295,7 +293,7 @@ class TestDraftApprovalFlow:
         ctx = {"rejection_feedback": "Not good enough"}
         task_db.execute(
             "UPDATE task SET status = 'failed', updated_at = ?, context = ? WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), json.dumps(ctx), task_id),
+            (datetime.now(UTC).isoformat(), json.dumps(ctx), task_id),
         )
         task_db.commit()
 
@@ -307,7 +305,7 @@ class TestDraftApprovalFlow:
     def test_approve_requires_draft_status(self, task_db):
         """approve endpoint rejects if task is not in draft state."""
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         task_db.execute(
             "INSERT INTO task (id, status, description, context, created_at, updated_at) "
             "VALUES (?, 'running', ?, '{}', ?, ?)",
@@ -411,7 +409,7 @@ class TestTaskLifecycle:
     def test_lifecycle_pending_to_running(self, task_db):
         """pending → running on task start."""
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         task_db.execute(
             "INSERT INTO task (id, status, description, context, created_at, updated_at) "
             "VALUES (?, 'pending', ?, '{}', ?, ?)",
@@ -421,7 +419,7 @@ class TestTaskLifecycle:
 
         task_db.execute(
             "UPDATE task SET status = 'running', updated_at = ? WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), task_id),
+            (datetime.now(UTC).isoformat(), task_id),
         )
         task_db.commit()
 
@@ -431,7 +429,7 @@ class TestTaskLifecycle:
     def test_lifecycle_running_to_draft(self, task_db):
         """running → draft when approval required."""
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         task_db.execute(
             "INSERT INTO task (id, status, description, context, created_at, updated_at) "
             "VALUES (?, 'running', ?, '{}', ?, ?)",
@@ -442,7 +440,7 @@ class TestTaskLifecycle:
         ctx = {"pending_approval": True, "current_node": "draft-node"}
         task_db.execute(
             "UPDATE task SET status = 'draft', updated_at = ?, context = ? WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), json.dumps(ctx), task_id),
+            (datetime.now(UTC).isoformat(), json.dumps(ctx), task_id),
         )
         task_db.commit()
 
@@ -452,7 +450,7 @@ class TestTaskLifecycle:
     def test_lifecycle_draft_to_executing_on_approve(self, task_db):
         """draft → executing on approval."""
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         task_db.execute(
             "INSERT INTO task (id, status, description, context, created_at, updated_at) "
             "VALUES (?, 'draft', ?, '{}', ?, ?)",
@@ -462,7 +460,7 @@ class TestTaskLifecycle:
 
         task_db.execute(
             "UPDATE task SET status = 'executing', updated_at = ? WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), task_id),
+            (datetime.now(UTC).isoformat(), task_id),
         )
         task_db.commit()
 
@@ -472,7 +470,7 @@ class TestTaskLifecycle:
     def test_lifecycle_draft_to_failed_on_reject(self, task_db):
         """draft → failed on rejection."""
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         task_db.execute(
             "INSERT INTO task (id, status, description, context, created_at, updated_at) "
             "VALUES (?, 'draft', ?, '{}', ?, ?)",
@@ -483,7 +481,7 @@ class TestTaskLifecycle:
         ctx = {"rejection_feedback": "Please redo"}
         task_db.execute(
             "UPDATE task SET status = 'failed', updated_at = ?, context = ? WHERE id = ?",
-            (datetime.now(timezone.utc).isoformat(), json.dumps(ctx), task_id),
+            (datetime.now(UTC).isoformat(), json.dumps(ctx), task_id),
         )
         task_db.commit()
 
@@ -493,7 +491,7 @@ class TestTaskLifecycle:
     def test_lifecycle_executing_to_completed(self, task_db):
         """executing → completed on success."""
         task_id = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = datetime.now(UTC).isoformat()
         task_db.execute(
             "INSERT INTO task (id, status, description, context, created_at, updated_at) "
             "VALUES (?, 'executing', ?, '{}', ?, ?)",
@@ -506,8 +504,8 @@ class TestTaskLifecycle:
             "UPDATE task SET status = 'completed', updated_at = ?, completed_at = ?, context = ? "
             "WHERE id = ?",
             (
-                datetime.now(timezone.utc).isoformat(),
-                datetime.now(timezone.utc).isoformat(),
+                datetime.now(UTC).isoformat(),
+                datetime.now(UTC).isoformat(),
                 json.dumps(ctx),
                 task_id,
             ),
@@ -644,7 +642,7 @@ class TestPgliteEpisodicMemory:
 
     def test_pglite_episodic_write_and_list(self, tmp_path):
         """Write episodic records and list them by project."""
-        from backend.memory.episodic import EpisodicMemoryStore, EpisodicMemory
+        from backend.memory.episodic import EpisodicMemory, EpisodicMemoryStore
 
         db_path = str(tmp_path / "episodic_test.db")
         store = EpisodicMemoryStore(db_path=db_path)
@@ -660,7 +658,7 @@ class TestPgliteEpisodicMemory:
             agent_role="engineer",
             summary="Fixed authentication bug in login flow",
             outcome_status="completed",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         store.insert(record)
 
@@ -671,7 +669,7 @@ class TestPgliteEpisodicMemory:
 
     def test_pglite_episodic_180day_retention(self, tmp_path):
         """Old records (>180 days) are deleted by retention policy."""
-        from backend.memory.episodic import EpisodicMemoryStore, EpisodicMemory
+        from backend.memory.episodic import EpisodicMemory, EpisodicMemoryStore
 
         db_path = str(tmp_path / "episodic_retention.db")
         store = EpisodicMemoryStore(db_path=db_path)
@@ -686,11 +684,11 @@ class TestPgliteEpisodicMemory:
             agent_role="coo",
             summary="Recent task",
             outcome_status="completed",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         store.insert(recent)
 
-        old_date = datetime.now(timezone.utc) - timedelta(days=200)
+        old_date = datetime.now(UTC) - timedelta(days=200)
         old = EpisodicMemory(
             id=str(uuid.uuid4()),
             project_id=project_id,

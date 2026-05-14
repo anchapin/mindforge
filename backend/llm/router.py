@@ -432,7 +432,7 @@ async def llm_complete_stream(
     tier: InferenceTier | None = None,
     system: str = "",
     agent_role: str | None = None,
-) -> "AsyncGenerator[str, None]":
+) -> AsyncGenerator[str, None]:
     """Stream a prompt completion token by token."""
     generator = await LLM_ROUTER.complete(
         prompt=prompt,
