@@ -136,11 +136,16 @@ async def execute_with_retry(
         if attempt < max_attempts:
             logger.info(
                 "node %s attempt %d/%d failed, retrying in %ds",
-                node.id, attempt, max_attempts, backoff,
+                node.id,
+                attempt,
+                max_attempts,
+                backoff,
             )
             await asyncio.sleep(backoff)
 
-    return last_result or NodeResult(node_id=node.id, status="failure", error="max retries exceeded")
+    return last_result or NodeResult(
+        node_id=node.id, status="failure", error="max retries exceeded"
+    )
 
 
 async def execute_skill(
@@ -149,6 +154,7 @@ async def execute_skill(
     llm_complete: Any,
     tools: Any,
     initial_context: dict[str, Any] | None = None,
+    _ws_manager: Any = None,
 ) -> SkillResult:
     """Execute a skill DAG from start to finish or first approval gate.
 
@@ -187,6 +193,7 @@ async def execute_skill(
         nodes_completed=[],
         started_at=datetime.utcnow(),
     )
+    ctx._ws_manager = _ws_manager
 
     return await _execute_dag(ctx, graph, llm_complete, tools)
 
@@ -215,6 +222,22 @@ async def _execute_dag(
         # Check approval requirement BEFORE executing
         if node.requires_approval:
             # Pause and return draft state
+            ws = ctx._ws_manager
+            if ws is None:
+                from backend.api.deps import get_ws_manager as _get_ws
+                ws = _get_ws()
+            deadline = (datetime.utcnow().timestamp() + node.approval_timeout_minutes * 60
+                if node.approval_timeout_minutes else 0)
+            deadline_iso = (
+                datetime.fromtimestamp(deadline).isoformat()
+                if deadline else datetime.utcnow().isoformat()
+            )
+            await ws.send_draft_ready(
+                task_id=ctx.task_id,
+                node_id=node.id,
+                draft=ctx.scratch.get(node.id, {}).get("output", {}),
+                approval_deadline_iso=deadline_iso,
+            )
             return SkillResult(
                 skill_id=ctx.skill.id,
                 skill_version=ctx.skill.version,
