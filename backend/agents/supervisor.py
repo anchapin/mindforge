@@ -267,25 +267,30 @@ def build_supervisor_graph(
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-            # aiosqlite.connect() is a coroutine — resolve it synchronously
-            # at graph-building time. If we're already inside an async context
-            # (pytest async test), use asyncio.run() which creates a nested loop
-            # with its own干净的 runner; otherwise use loop.run_until_complete().
-            try:
-                running_loop = asyncio.get_running_loop()
-            except RuntimeError:
-                running_loop = None
+            # aiosqlite.connect() is a coroutine — resolve it at graph-building time.
+            # Since both loop.run_until_complete() and asyncio.run() fail when
+            # called from within an existing event loop (pytest async context),
+            # we run the connection in a separate daemon thread and block until
+            # it completes. This is safe for graph-building which is a
+            # synchronous operation at startup.
+            import threading
 
-            if running_loop:
-                # Already inside an async context — create our own loop in a
-                # fresh thread runner so we don't interfere with pytest's loop.
-                conn = asyncio.run(aiosqlite.connect(checkpointer_path))
-            else:
-                loop = asyncio.new_event_loop()
+            conn_holder: list[aiosqlite.Connection | None] = [None]
+
+            def _connect():
+                tloop = asyncio.new_event_loop()
                 try:
-                    conn = loop.run_until_complete(aiosqlite.connect(checkpointer_path))
+                    conn_holder[0] = tloop.run_until_complete(
+                        aiosqlite.connect(checkpointer_path)
+                    )
                 finally:
-                    loop.close()
+                    tloop.close()
+
+            t = threading.Thread(target=_connect, daemon=True)
+            t.start()
+            t.join()  # Block until connection is ready
+            conn = conn_holder[0]
+            assert conn is not None, "aiosqlite.connect() returned None"
             checkpointer = AsyncSqliteSaver(conn)
             return builder.compile(checkpointer=checkpointer)  # type: ignore[return-value]
         except ImportError:
