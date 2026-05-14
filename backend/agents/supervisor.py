@@ -7,6 +7,7 @@ Uses LangGraph StateGraph with SQLite checkpointer for task persistence across r
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
@@ -258,21 +259,46 @@ def build_supervisor_graph(
 
     if checkpointer_path:
         # SQLite-based checkpointer for persistence across restarts.
-        # Install langgraph-checkpoint-sqlite for production use:
-        #   pip install langgraph-checkpoint-sqlite
-        # For now, fall back to in-memory saver.
+        # Install langgraph-checkpoint-sqlite>=2.0.0,<3.0.0 and aiosqlite for async use:
+        #   pip install langgraph-checkpoint-sqlite aiosqlite
+        # SqliteSaver (sync) does NOT support async ainvoke() — must use AsyncSqliteSaver.
+        # We must do the async connection + compile in a sync-safe way:
         try:
-            from langgraph.checkpoint.sqlite import SqliteSaver
-            from sqlalchemy import create_engine
-            engine = create_engine(f"sqlite:///{checkpointer_path}")
-            checkpointer = SqliteSaver(engine)
-            return builder.compile(checkpointer=checkpointer)
+            import aiosqlite
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+            # aiosqlite.connect() is a coroutine — resolve it at graph-building time.
+            # Since both loop.run_until_complete() and asyncio.run() fail when
+            # called from within an existing event loop (pytest async context),
+            # we run the connection in a separate daemon thread and block until
+            # it completes. This is safe for graph-building which is a
+            # synchronous operation at startup.
+            import threading
+
+            conn_holder: list[aiosqlite.Connection | None] = [None]
+
+            def _connect():
+                tloop = asyncio.new_event_loop()
+                try:
+                    conn_holder[0] = tloop.run_until_complete(
+                        aiosqlite.connect(checkpointer_path)
+                    )
+                finally:
+                    tloop.close()
+
+            t = threading.Thread(target=_connect, daemon=True)
+            t.start()
+            t.join()  # Block until connection is ready
+            conn = conn_holder[0]
+            assert conn is not None, "aiosqlite.connect() returned None"
+            checkpointer = AsyncSqliteSaver(conn)
+            return builder.compile(checkpointer=checkpointer)  # type: ignore[return-value]
         except ImportError:
             logger.warning(
-                "SqliteSaver not available, using MemorySaver (no persistence). "
-                "Install langgraph-checkpoint-sqlite for persistence."
+                "AsyncSqliteSaver not available, using MemorySaver (no persistence). "
+                "Install langgraph-checkpoint-sqlite>=2.0.0,<3.0.0 and aiosqlite for persistence."
             )
-            return builder.compile(checkpointer=MemorySaver())
+            return builder.compile(checkpointer=MemorySaver())  # type: ignore[return-value]
 
     return builder.compile()  # type: ignore[return-value]
 

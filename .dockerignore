@@ -1,0 +1,48 @@
+# ── Git ──────────────────────────────────────────────────────────────────────
+.git/
+.gitignore
+.gitattributes
+
+# ── Cache directories ─────────────────────────────────────────────────────────
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/__pycache__/
+
+# ── Logs ─────────────────────────────────────────────────────────────────────
+logs/
+
+# ── Environment / secrets ──────────────────────────────────────────────────────
+.env
+.env.local
+.env.*.local
+
+# ── Node (frontend, not needed for backend build) ──────────────────────────────
+node_modules/
+frontend/node_modules/
+
+# ── Python distributions / wheels (not needed inside the image) ────────────────
+*.whl
+dist/
+build/
+
+# ── IDE / editor ───────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ── GitHub Actions (not needed inside the image) ───────────────────────────────
+.github/
+
+# ── Large fixtures / binary blobs that pip installs from git ──────────────────
+*.jar
+*.zip
+*.tar.gz
+*.pkl
+*.h5
+*.model

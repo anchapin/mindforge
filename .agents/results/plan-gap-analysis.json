@@ -1,0 +1,227 @@
+{
+  "project_name": "MindForge",
+  "description": "Self-hosted multi-agent AI platform (FastAPI + LangGraph + ChromaDB + PGLite). Gap analysis vs SPEC.md (v0.1.0, 2026-05-13). 14 issues created across 3 phases.",
+  "tech_stack": {
+    "backend": "FastAPI, LangGraph, PGLite, ChromaDB, Temporal (stub)",
+    "frontend": "React, Zustand, TanStack Query, Vite",
+    "infrastructure": "Docker compose, Ollama, OpenRouter"
+  },
+  "architecture_decisions": [
+    {
+      "decision": "LangGraph supervisor pattern with role-specialized agents",
+      "rationale": "SPEC.md 2.1 - supervisor routes by classify_task_type keyword rules",
+      "alternatives_considered": ["AutoGen", "CrewAI"]
+    },
+    {
+      "decision": "ChromaDB + PGLite as separate stores with SharedMemoryStore facade",
+      "rationale": "SPEC.md 2.2 - PGLite has no vector type; ChromaDB handles semantic, PGLite handles episodic/style",
+      "alternatives_considered": ["Weaviate", "Qdrant", "SQLite with vector extension"]
+    }
+  ],
+  "tasks": [
+    {
+      "id": "task-1", "agent": "backend", "title": "Wire LangGraph SqliteSaver checkpointer + write checkpointer test",
+      "description": "Add langgraph-checkpoint-sqlite to pyproject.toml deps. Fix build_supervisor_graph() SqliteSaver wiring (both import-success and import-failure paths must try SqliteSaver). Write test_langgraph_checkpointer_resume.",
+      "priority": 1, "dependencies": [], "estimated_complexity": "high",
+      "acceptance_criteria": [
+        "langgraph-checkpoint-sqlite>=0.1.0 in backend/pyproject.toml",
+        "SqliteSaver used when checkpointer_path provided (not MemorySaver fallback)",
+        "test_langgraph_checkpointer_resume passes",
+        "Phase 1 exit criterion: task can be restarted mid-execution and resume from checkpoint"
+      ],
+      "artifacts_expected": ["backend/tests/integration/test_checkpointer.py"],
+      "scope": ["backend/agents/supervisor.py", "backend/pyproject.toml"]
+    },
+    {
+      "id": "task-2", "agent": "backend", "title": "Implement trigger_skill() three-stage chain + skill registry startup load",
+      "description": "Implement backend/skills/trigger.py with trigger_skill(task_description) using: explicit name match -> keyword match -> LLM intent classifier. Add SkillRegistry.load_all() call in main.py lifespan. Write test_skill_trigger_chain.",
+      "priority": 1, "dependencies": [], "estimated_complexity": "high",
+      "acceptance_criteria": [
+        "trigger_skill() implements explicit > keyword > intent priority chain",
+        "classify_intent() LLM call when keyword path misses",
+        "SkillRegistry.load_all() called in main.py lifespan startup",
+        "test_skill_trigger_chain passes with explicit, keyword, and intent triggers"
+      ],
+      "artifacts_expected": ["backend/skills/trigger.py", "backend/tests/integration/test_skill_trigger.py"],
+      "scope": ["backend/skills/trigger.py", "backend/main.py", "backend/skills/registry.py"]
+    },
+    {
+      "id": "task-3", "agent": "backend", "title": "Wire skill executor into SupervisorRunner + draft-approve-continue flow",
+      "description": "Implement SupervisorRunner.run_with_skill() delegating to execute_skill() (DAG) instead of direct _run_agent(). When task matches skill trigger, route to skill executor. execute_skill() returns SkillResult(status=draft) at approval gate. POST /approve resumes via execute_skill_continue().",
+      "priority": 1, "dependencies": ["task-2"], "estimated_complexity": "very-high",
+      "acceptance_criteria": [
+        "SupervisorRunner.run_with_skill() implemented and callable",
+        "Task matching skill trigger delegates to execute_skill() not direct agent",
+        "execute_skill() returns status=draft at approval gate -> task enters draft state",
+        "POST /api/tasks/{id}/approve resumes DAG via execute_skill_continue()",
+        "test_skill_draft_approval_flow end-to-end: task -> skill DAG -> draft -> approve -> completed"
+      ],
+      "artifacts_expected": ["backend/tests/integration/test_skill_dag_execution.py"],
+      "scope": ["backend/agents/supervisor.py", "backend/skills/executor.py", "backend/api/routes/tasks.py"]
+    },
+    {
+      "id": "task-4", "agent": "backend", "title": "Implement clarification protocol (WS messages + API endpoint)",
+      "description": "Add POST /api/tasks/{task_id}/clarification endpoint accepting {decision, edited_draft}. Wire ws_manager.send_clarification_request() in supervisor when agent encounters ambiguous input. Clarification response populates context.constraint so agent continues.",
+      "priority": 1, "dependencies": [], "estimated_complexity": "medium",
+      "acceptance_criteria": [
+        "POST /api/tasks/{task_id}/clarification endpoint implemented",
+        "Agent encounters ambiguity -> send_clarification_request() with question/options/context_summary",
+        "Clarification response injected into task context for continuation",
+        "test_clarification_flow: task -> clarification_request WS -> user responds -> task continues"
+      ],
+      "artifacts_expected": ["backend/api/routes/tasks.py", "backend/tests/integration/test_clarification.py"],
+      "scope": ["backend/api/routes/tasks.py", "backend/api/websocket.py", "backend/agents/supervisor.py"]
+    },
+    {
+      "id": "task-5", "agent": "backend", "title": "Implement per-integration rate limiter (asyncio.Semaphore)",
+      "description": "Create backend/tools/rate_limiter.py with IntegrationRateLimiter class using per-key Semaphore dict per SPEC 5.5.2. Wrap all tool calls via integration_call(integration_name, fn). GitHub=Semaphore(5), Stripe=Semaphore(2), gmail=Semaphore(10), linear=Semaphore(5), _default=Semaphore(20).",
+      "priority": 2, "dependencies": [], "estimated_complexity": "medium",
+      "acceptance_criteria": [
+        "IntegrationRateLimiter with per-integration semaphores as specified",
+        "All tool calls routed through integration_call(integration_name, fn)",
+        "Concurrent calls to same integration serialized; different integrations parallel",
+        "test_concurrent_rate_limiting: 6 concurrent GitHub calls -> 5 pass immediately, 1 queued"
+      ],
+      "artifacts_expected": ["backend/tools/rate_limiter.py", "backend/tests/integration/test_rate_limiter.py"],
+      "scope": ["backend/tools/rate_limiter.py", "backend/tools/integrations/github.py", "backend/tools/integrations/stripe.py", "backend/tools/integrations/email_fetch.py"]
+    },
+    {
+      "id": "task-6", "agent": "backend", "title": "Implement writing style learning (LLM extraction on draft approval)",
+      "description": "On task approval, call LLM to extract WritingProfile fields from approved content: tone, sentence_length, first_person, signature_phrases, greeting_style, signoff_style. Feed extracted fields to memory.update_writing_style(). If user edited draft, extract from edited version. Write test.",
+      "priority": 2, "dependencies": ["task-3"], "estimated_complexity": "high",
+      "acceptance_criteria": [
+        "On task approval, extract style fields via LLM from approved content",
+        "Feed extracted fields to memory.update_writing_style(extracted)",
+        "If user edited draft, extract from edited version (not original)",
+        "test_style_learning_pipeline: mock LLM, verify WritingProfile updated after approve"
+      ],
+      "artifacts_expected": ["backend/tests/integration/test_style_learning.py"],
+      "scope": ["backend/memory/style.py", "backend/api/routes/tasks.py", "backend/llm/router.py"]
+    },
+    {
+      "id": "task-7", "agent": "backend", "title": "Add UserPreference API (GET/PUT /api/preferences) + onboarding endpoint",
+      "description": "Implement GET /api/preferences (return UserPreference singleton with defaults) and PUT /api/preferences (partial update). Implement POST /api/onboarding to create WritingProfile and Integration credentials from OnboardingWizard step 3 submission.",
+      "priority": 2, "dependencies": [], "estimated_complexity": "medium",
+      "acceptance_criteria": [
+        "GET /api/preferences returns current user preferences with defaults",
+        "PUT /api/preferences accepts partial update (only changed fields)",
+        "POST /api/onboarding accepts {writing_style, integrations} and creates records",
+        "OnboardingWizard FE calls POST /api/onboarding on step 3 completion"
+      ],
+      "artifacts_expected": ["backend/api/routes/preferences.py", "backend/api/routes/onboarding.py", "backend/tests/integration/test_preferences.py"],
+      "scope": ["backend/api/routes/preferences.py", "backend/api/routes/onboarding.py", "backend/db/schema.sql"]
+    },
+    {
+      "id": "task-8", "agent": "frontend", "title": "Wire SkillLauncher to GET /api/skills catalog + run endpoint",
+      "description": "Expose SkillRegistry.list() via GET /api/skills (SkillMetadata list) and GET /api/skills/{id} (full Skill with execution_graph). Add POST /api/skills/{id}/run to trigger skill execution. Wire SkillLauncher.tsx to TanStack Query to fetch and display skills with success/failure counts.",
+      "priority": 2, "dependencies": ["task-2"], "estimated_complexity": "medium",
+      "acceptance_criteria": [
+        "GET /api/skills and GET /api/skills/{id} return correct schema",
+        "SkillLauncher displays all loaded skills with success/failure counts",
+        "Click on skill calls POST /api/skills/{id}/run -> task created -> WS updates UI",
+        "test_skill_launcher_api verifying catalog endpoint response shape"
+      ],
+      "artifacts_expected": ["backend/api/routes/skills.py", "frontend/src/components/SkillLauncher.tsx"],
+      "scope": ["backend/api/routes/skills.py", "frontend/src/components/SkillLauncher.tsx"]
+    },
+    {
+      "id": "task-9", "agent": "backend", "title": "Wire all WebSocket messages at correct task state transitions",
+      "description": "send_task_status_update on pending->running->draft transitions. send_draft_ready when skill hits approval gate. send_approval_resolved on POST /approve and POST /reject. send_task_completed on success with final_output. Verify NotificationBell receives and displays real counts from WS.",
+      "priority": 2, "dependencies": ["task-3"], "estimated_complexity": "medium",
+      "acceptance_criteria": [
+        "All 8 WS message types (SPEC 2.5) sent at correct state transitions",
+        "NotificationBell receives and displays real notification counts from WS",
+        "test_websocket_messages verifies all 8 message types fire at correct times"
+      ],
+      "artifacts_expected": ["backend/tests/integration/test_websocket.py"],
+      "scope": ["backend/api/routes/tasks.py", "backend/api/websocket.py"]
+    },
+    {
+      "id": "task-10", "agent": "backend", "title": "Add Temporal service to compose.yaml + implement actual workflows",
+      "description": "Add temporal service to compose.yaml (temporalio/server:1.24.0 or later) with PostgreSQL persistence. Implement email monitor workflow (IMAP fetch + urgency classification) and follow-up detection workflow (3-day unreplied check). Replace TemporalClient stub logging with temporalio.WorkflowClient.start().",
+      "priority": 1, "dependencies": [], "estimated_complexity": "very-high",
+      "acceptance_criteria": [
+        "docker compose up -d temporal starts Temporal server with persistence",
+        "Email inbox monitoring workflow running (periodic IMAP fetch)",
+        "Follow-up detection workflow running (unreplied thread check)",
+        "test_temporal_workflow_startup verifies workflow clients initialize without error"
+      ],
+      "artifacts_expected": ["compose.yaml", "backend/scheduler/workflows/", "backend/tests/integration/test_temporal.py"],
+      "scope": ["compose.yaml", "backend/scheduler/temporal_app.py", "backend/scheduler/workflows/"]
+    },
+    {
+      "id": "task-11", "agent": "backend", "title": "Implement LinearTool (Phase 1 per SPEC 5.1)",
+      "description": "Create backend/tools/integrations/linear.py implementing BaseTool with list_issues(), create_issue(), update_issue(), get_issue() using Linear API v1. Register via register_all_tools(). Use integration_call(linear, ...) for rate limiting. Phase 1 uses personal API token (not OAuth).",
+      "priority": 2, "dependencies": ["task-5"], "estimated_complexity": "high",
+      "acceptance_criteria": [
+        "LinearTool with list_issues(), create_issue(), update_issue(), get_issue()",
+        "Tool registered via register_all_tools()",
+        "Rate limited via integration_call(linear, ...)",
+        "test_linear_tool with mocked Linear API responses"
+      ],
+      "artifacts_expected": ["backend/tools/integrations/linear.py", "backend/tests/integration/test_linear.py"],
+      "scope": ["backend/tools/integrations/linear.py", "backend/tools/registry.py"]
+    },
+    {
+      "id": "task-12", "agent": "backend", "title": "Add GET /api/usage budget endpoint + WS budget alerts",
+      "description": "Expose BUDGET_GUARD.usage_today via GET /api/usage (calls_today, tokens_today, calls_remaining, tokens_remaining). Enhance GET /health to include budget warnings when calls_remaining < 50 or tokens_remaining < 300k. Send budget_warning WS message to dashboard when threshold approached.",
+      "priority": 2, "dependencies": [], "estimated_complexity": "low",
+      "acceptance_criteria": [
+        "GET /api/usage returns current day budget usage",
+        "Dashboard can display Approaching OpenRouter limit banner",
+        "Budget alert sent via WS when remaining < threshold",
+        "test_budget_api verifying usage endpoint response"
+      ],
+      "artifacts_expected": ["backend/api/routes/usage.py", "backend/tests/integration/test_budget.py"],
+      "scope": ["backend/api/routes/usage.py", "backend/api/websocket.py"]
+    },
+    {
+      "id": "task-13", "agent": "backend", "title": "Implement Stripe webhook handler with HMAC verification",
+      "description": "Add POST /webhooks/stripe endpoint with HMAC-SHA256 signature validation using STRIPE_WEBHOOK_SECRET. Implement billing anomaly detection: if invoice.paid_amount > billing_alert_threshold_usd -> draft notification for user approval. Webhook processing logged to episodic memory.",
+      "priority": 3, "dependencies": [], "estimated_complexity": "medium",
+      "acceptance_criteria": [
+        "POST /webhooks/stripe validates signature, returns 200 fast (within 3s)",
+        "test_stripe_webhook_validation with known-good and tampered signatures",
+        "Billing anomaly triggers draft-first workflow (approval required)",
+        "Webhook processing logged to episodic memory"
+      ],
+      "artifacts_expected": ["backend/api/routes/webhooks.py", "backend/tests/integration/test_stripe_webhook.py"],
+      "scope": ["backend/api/routes/webhooks.py", "backend/tools/integrations/stripe.py"]
+    },
+    {
+      "id": "task-14", "agent": "backend", "title": "Add pagination and date filtering to GitHubTool.get_commits()",
+      "description": "Fix GitHubTool.get_commits() to paginate through all pages (per_page=100, page loop) and filter by since=YYYY-MM-DD date parameter. Handle X-RateLimit-Remaining headers; on 403 wait for rate limit reset via integration_call semaphore.",
+      "priority": 2, "dependencies": ["task-5"], "estimated_complexity": "medium",
+      "acceptance_criteria": [
+        "get_commits(since: datetime) paginates through all pages until since date reached",
+        "test_github_pagination with mocked paged responses (3 pages)",
+        "Rate limit headers checked; 403 triggers semaphore wait"
+      ],
+      "artifacts_expected": ["backend/tools/integrations/github.py", "backend/tests/integration/test_github.py"],
+      "scope": ["backend/tools/integrations/github.py"]
+    }
+  ],
+  "api_contracts": [
+    {"endpoint": "GET /api/preferences", "method": "GET", "request": {}, "response": {"proactive_monitoring_enabled": true, "email_check_interval_minutes": 30, "calendar_check_interval_minutes": 60, "billing_alert_threshold_usd": 50, "notification_channel": "dashboard", "notification_handle": null}, "headers": {}},
+    {"endpoint": "PUT /api/preferences", "method": "PUT", "request": {"proactive_monitoring_enabled": false}, "response": {"status": "updated", "preferences": {"proactive_monitoring_enabled": false}}, "headers": {}},
+    {"endpoint": "POST /api/onboarding", "method": "POST", "request": {"writing_style": {"tone": "semi-formal"}, "integrations": [{"app_name": "github", "api_key": "ghp_..."}]}, "response": {"status": "created"}, "headers": {}},
+    {"endpoint": "GET /api/usage", "method": "GET", "request": {}, "response": {"calls_today": 12, "tokens_today": 45000, "calls_remaining": 488, "tokens_remaining": 1955000}, "headers": {}},
+    {"endpoint": "POST /webhooks/stripe", "method": "POST", "request": {"type": "invoice.paid", "data": {"object": {"amount_paid": 9900}}}, "response": {"status": "received"}, "headers": {"stripe-signature": "t=...,v1=..."}},
+    {"endpoint": "POST /api/tasks/{task_id}/clarification", "method": "POST", "request": {"decision": "Refund", "edited_draft": null}, "response": {"status": "clarification_resolved"}, "headers": {}}
+  ],
+  "data_models": [
+    {"entity": "UserPreference", "fields": {"id": "UUID", "proactive_monitoring_enabled": "bool", "email_check_interval_minutes": "int", "calendar_check_interval_minutes": "int", "billing_alert_threshold_usd": "int", "notification_channel": "str", "notification_handle": "str|null"}},
+    {"entity": "Integration", "fields": {"id": "UUID", "app_name": "str", "auth_token_enc": "str", "refresh_token_enc": "str|null", "status": "str", "permissions": "list[str]", "allowed_agents": "list[str]"}}
+  ],
+  "non_functional_requirements": {
+    "security": ["HMAC verification on Stripe webhook", "AES-256-GCM token encryption at rest", "FERNET_KEY in .env", "scrub() on all WS messages"],
+    "performance": ["Budget guard: 30 calls/min, 500 calls/day, 2M tokens/day", "Per-integration rate limits via Semaphore"],
+    "scalability": ["SqliteSaver checkpointer for multi-worker persistence (Phase 4)"]
+  },
+  "testing_strategy": {
+    "unit_tests": "Circuit breaker, classify_task_type, fernet_round_trip, safe_yaml_loading, skill_graph_validation - all passing",
+    "integration_tests": "Empty dir (backend/tests/integration/) - 14 integration test modules needed",
+    "e2e_tests": "Draft approval flow, checkpointer resume, WS message protocol - needed",
+    "performance_tests": "Budget guard rate limits, per-integration concurrency"
+  }
+}
