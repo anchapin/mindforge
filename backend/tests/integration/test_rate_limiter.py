@@ -151,4 +151,4 @@ class TestIntegrationRateLimiter:
             return "result_value"
 
         result = await limiter.integration_call("test", mock_fn)
-assert result == "result_value"
+        assert result == "result_value"
