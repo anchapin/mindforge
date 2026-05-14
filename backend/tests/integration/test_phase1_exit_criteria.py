@@ -56,6 +56,99 @@ magic_mock_emb = MagicMock(side_effect=_mock_emb_sync)
 class TestLangGraphCheckpointerResume:
     """Interrupt a supervisor run mid-execution and resume from checkpoint."""
 
+    def _is_sqlite_checkpointer_available(self) -> bool:
+        """Return True if langgraph-checkpoint-sqlite is installed."""
+        try:
+            from langgraph.checkpoint.sqlite import SqliteSaver  # noqa: F401
+            return True
+        except ImportError:
+            return False
+
+    @pytest.mark.asyncio
+    async def test_checkpointer_uses_sqlitesaver_when_available(self, tmp_path):
+        """Verify that build_supervisor_graph with checkpointer_path uses AsyncSqliteSaver.
+
+        RED phase: This test fails when langgraph-checkpoint-sqlite is not installed
+        (ImportError) or when the code falls through to MemorySaver.
+        """
+        pytest.importorskip("langgraph.checkpoint.sqlite.aio", reason="langgraph-checkpoint-sqlite not installed")
+
+        from backend.agents.supervisor import build_supervisor_graph, AgentState
+        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+
+        checkpoint_db = str(tmp_path / "checkpointer.db")
+
+        async def mock_read(query, project_id=None, memory_types=None, top_k=5):
+            return ""
+
+        async def mock_format(results):
+            return ""
+
+        memory_store = MagicMock()
+        memory_store.read = mock_read
+        memory_store.format_combined_context = mock_format
+
+        graph = build_supervisor_graph(memory_store, checkpointer_path=checkpoint_db)
+
+        # The compiled graph must have a checkpointer that is an instance of AsyncSqliteSaver,
+        # NOT MemorySaver. If the fallback path is taken, this will fail.
+        compiled = graph
+        checkpointer = getattr(compiled, "checkpointer", None)
+        assert checkpointer is not None, "Compiled graph has no checkpointer attribute"
+        assert isinstance(checkpointer, AsyncSqliteSaver), (
+            f"Expected AsyncSqliteSaver checkpointer but got {type(checkpointer).__name__}. "
+            "The fallback to MemorySaver path was taken — checkpointer_path was ignored."
+        )
+
+    @pytest.mark.asyncio
+    async def test_checkpointer_state_persists_across_invocations(self, tmp_path):
+        """Verify that checkpoint state is actually persisted to the SQLite file.
+
+        Start a task, invoke the graph, then invoke again with same thread_id.
+        The second invocation should resume from the checkpoint (same task_id in state).
+        """
+        pytest.importorskip("langgraph.checkpoint.sqlite.aio", reason="langgraph-checkpoint-sqlite not installed")
+
+        from backend.agents.supervisor import build_supervisor_graph, AgentState
+
+        db_file = tmp_path / "checkpoint_persist.db"
+        checkpoint_db = str(db_file)
+
+        async def mock_read(query, project_id=None, memory_types=None, top_k=5):
+            return ""
+
+        async def mock_format(results):
+            return ""
+
+        memory_store = MagicMock()
+        memory_store.read = mock_read
+        memory_store.format_combined_context = mock_format
+
+        graph = build_supervisor_graph(memory_store, checkpointer_path=checkpoint_db)
+
+        thread_id = str(uuid.uuid4())
+        config = {"configurable": {"thread_id": thread_id}}
+
+        initial = AgentState(
+            current_task="Analyze this task carefully",
+            task_id="test-task-persist",
+            project_id="test-project",
+        )
+
+        # First invoke — creates the checkpoint
+        result1 = await graph.ainvoke(initial, config)
+
+        # Second invoke with same thread_id — must resume from checkpoint,
+        # producing the same task_id in the stored state
+        result2 = await graph.ainvoke(initial, config)
+
+        # Both results should have the same task_id from the checkpointed state
+        assert result1["task_id"] == result2["task_id"], (
+            "Second invoke with same thread_id produced a different task_id. "
+            "Checkpointer is not resuming from checkpoint."
+        )
+        assert result1["task_id"] == "test-task-persist"
+
     @pytest.mark.asyncio
     async def test_langgraph_checkpointer_resume_async(self, tmp_path):
         """Start a task, interrupt it mid-execution, resume from checkpoint.
@@ -65,7 +158,8 @@ class TestLangGraphCheckpointerResume:
         """
         from backend.agents.supervisor import build_supervisor_graph, AgentState
 
-        checkpoint_db = str(tmp_path / "checkpoint_async.db")
+        db_file = tmp_path / "checkpoint_async.db"
+        checkpoint_db = str(db_file)
 
         # Build a sync mock of SharedMemoryStore — the agent's read() is awaited,
         # so return an awaitable that resolves to "" (no memory context).

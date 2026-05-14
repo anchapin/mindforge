@@ -258,19 +258,21 @@ def build_supervisor_graph(
 
     if checkpointer_path:
         # SQLite-based checkpointer for persistence across restarts.
-        # Install langgraph-checkpoint-sqlite for production use:
-        #   pip install langgraph-checkpoint-sqlite
-        # For now, fall back to in-memory saver.
+        # Install langgraph-checkpoint-sqlite>=2.0.0,<3.0.0 and aiosqlite for async use:
+        #   pip install langgraph-checkpoint-sqlite aiosqlite
+        # SqliteSaver (sync) does NOT support async ainvoke() — must use AsyncSqliteSaver.
+        # Since aiosqlite.connect() is async, the graph must be compiled inside an async
+        # context. SupervisorRunner.run() handles this by calling _build_graph_async().
         try:
-            from langgraph.checkpoint.sqlite import SqliteSaver
-            from sqlalchemy import create_engine
-            engine = create_engine(f"sqlite:///{checkpointer_path}")
-            checkpointer = SqliteSaver(engine)
+            from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
+            import aiosqlite
+            conn = aiosqlite.connect(checkpointer_path)
+            checkpointer = AsyncSqliteSaver(conn)
             return builder.compile(checkpointer=checkpointer)
         except ImportError:
             logger.warning(
-                "SqliteSaver not available, using MemorySaver (no persistence). "
-                "Install langgraph-checkpoint-sqlite for persistence."
+                "AsyncSqliteSaver not available, using MemorySaver (no persistence). "
+                "Install langgraph-checkpoint-sqlite>=2.0.0,<3.0.0 and aiosqlite for persistence."
             )
             return builder.compile(checkpointer=MemorySaver())
 
