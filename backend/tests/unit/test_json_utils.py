@@ -5,12 +5,11 @@ Verifies robust JSON parse error handling with retry logic and recovery.
 
 from __future__ import annotations
 
-import json
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
-from backend.agents.json_utils import MAX_RETRIES, parse_with_recovery
+from backend.agents.json_utils import parse_with_recovery
 
 
 class TestParseWithRecovery:

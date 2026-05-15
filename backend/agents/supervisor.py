@@ -17,7 +17,7 @@ import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from typing import Any, Literal, Self
+from typing import Any, Literal
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
@@ -354,19 +354,19 @@ class SupervisorRunnerPool:
     on every task request. Pool size is configurable (default 2).
     """
 
-    def __init__(self: type[Self], size: int = 2) -> None:
+    def __init__(self, size: int = 2) -> None:
         self._size = size
         self._runners: list[SupervisorRunner] = []
         self._running: list[SupervisorRunner] = []
         self._lock = threading.Lock()
 
-    async def initialize(self: Self, memory_store: SharedMemoryStore, checkpointer_path: str | None = None) -> None:
+    async def initialize(self, memory_store: SharedMemoryStore, checkpointer_path: str | None = None) -> None:
         """Pre-compile runner instances. Call at startup."""
         for _ in range(self._size):
             runner = SupervisorRunner(memory_store, checkpointer_path)
             self._runners.append(runner)
 
-    async def acquire(self: Self) -> SupervisorRunner:
+    async def acquire(self) -> SupervisorRunner:
         """Get an available runner from the pool."""
         with self._lock:
             if self._runners:
@@ -374,12 +374,12 @@ class SupervisorRunnerPool:
                 self._running.append(runner)
                 return runner
             runner = SupervisorRunner.__new__(SupervisorRunner)
-            runner.graph = None
-            runner._memory = None
+            runner.graph = None  # type: ignore[assignment]
+            runner._memory = None  # type: ignore[assignment]
             self._running.append(runner)
             return runner
 
-    async def release(self: Self, runner: SupervisorRunner) -> None:
+    async def release(self, runner: SupervisorRunner) -> None:
         """Return a runner to the pool."""
         with self._lock:
             if runner in self._running:

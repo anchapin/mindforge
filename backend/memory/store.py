@@ -20,7 +20,6 @@ import logging
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
-from threading import Lock
 
 from .episodic import EpisodicMemory, EpisodicMemoryStore
 from .semantic import SemanticMemory
@@ -500,8 +499,8 @@ class SharedMemoryStore:
 
     def get_queue_metrics(self) -> dict[str, Any]:
         """Return current write queue metrics."""
-        metrics = self._metrics.to_dict()
+        metrics: dict[str, Any] = self._metrics.to_dict()  # type: ignore[assignment]
         metrics["queue_size"] = self._write_queue.qsize()
         metrics["queue_maxsize"] = WRITE_QUEUE_MAXSIZE
-        metrics["queue_fill_ratio"] = self._write_queue.qsize() / WRITE_QUEUE_MAXSIZE
+        metrics["queue_fill_ratio"] = float(self._write_queue.qsize()) / WRITE_QUEUE_MAXSIZE
         return metrics

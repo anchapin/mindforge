@@ -85,9 +85,8 @@ class TestSemanticMemoryGracefulDegradation:
 
         with patch.object(
             embeddings_module, "embed_texts", new=AsyncMock(side_effect=embed_side_effect)
-        ):
-            with caplog.at_level(logging.WARNING):
-                results = await sm.retrieve(query="test query", project_id="p1", top_k=5)
+        ), caplog.at_level(logging.WARNING):
+            results = await sm.retrieve(query="test query", project_id="p1", top_k=5)
 
         assert results == []
         assert any("ChromaDB" in r.msg or "degraded" in r.msg for r in caplog.records), (
