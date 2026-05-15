@@ -1,0 +1,63 @@
+version: "1"
+name: calendar-conflict
+description: >
+  Read-only check for scheduling conflicts on the user's Google Calendar.
+  Given a candidate time window, returns any overlapping events so the
+  agent can warn the user before proposing a meeting.
+category: scheduling
+trigger:
+  type: keyword
+  keywords:
+    - calendar conflict
+    - check calendar
+    - schedule conflict
+    - is that time free
+    - time available
+  intents:
+    - check_calendar_availability
+
+execution_graph:
+  type: directed_acyclic_graph
+  nodes:
+    - id: find_conflicts
+      agent: researcher
+      goal: >
+        Call google_calendar.find_conflicts with the candidate
+        start_iso / end_iso to retrieve overlapping events. Read-only.
+      tools:
+        - google_calendar
+      memory_layers:
+        - episodic
+      output_schema:
+        type: object
+        fields:
+          - conflicts
+          - count
+
+    - id: report
+      agent: cmo
+      goal: >
+        Summarise the conflict result for the user in plain language.
+        If conflicts is non-empty, list the overlapping events; otherwise
+        confirm the window is free.
+      memory_layers:
+        - episodic
+
+    - id: end
+      agent: coo
+      goal: Skill execution complete.
+      memory_layers: []
+
+  edges:
+    - from: find_conflicts
+      to: report
+      condition: find_conflicts.success
+    - from: find_conflicts
+      to: end
+      condition: find_conflicts.failed
+    - from: report
+      to: end
+      condition: report.success
+
+memory_layers:
+  - episodic

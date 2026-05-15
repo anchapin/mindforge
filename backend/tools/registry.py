@@ -51,10 +51,11 @@ def register_all_tools() -> None:
     from .email_fetch import EmailFetchTool
     from .email_send import EmailSendTool
     from .github import GitHubTool
+    from .integrations.google_calendar import GoogleCalendarTool
     from .integrations.linear import LinearTool
     from .stripe import StripeTool
 
-    for tool_cls in [GitHubTool, StripeTool, EmailFetchTool, EmailSendTool, LinearTool]:
+    for tool_cls in [GitHubTool, StripeTool, EmailFetchTool, EmailSendTool, LinearTool, GoogleCalendarTool]:
         try:
             ToolRegistry.register(tool_cls())  # type: ignore[abstract]
         except Exception as exc:
