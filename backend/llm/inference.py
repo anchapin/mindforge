@@ -300,7 +300,7 @@ async def _ollama_complete(
         response = ollama.generate(
             model=model,
             prompt=prompt,
-            system=system if system else None,
+            system=system or "",
             options={
                 "num_predict": max_tokens,
                 "temperature": temperature,
@@ -328,7 +328,7 @@ async def _ollama_stream(
         response = await client.generate(
             model=model,
             prompt=prompt,
-            system=system if system else None,
+            system=system or "",
             options={
                 "num_predict": max_tokens,
                 "temperature": temperature,

@@ -68,6 +68,7 @@ class TemporalClient:
 
             from .workflows import ALL_ACTIVITIES, ALL_WORKFLOWS
 
+            assert self.host is not None  # __init__ guarantees this; pin for mypy
             self._client = await Client.connect(self.host, namespace=self.namespace)
             self._worker = Worker(
                 self._client,
