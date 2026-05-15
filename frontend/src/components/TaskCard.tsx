@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect } from "react";
 import type { Task } from "../lib/api";
 
 // ---------------------------------------------------------------------------
@@ -183,33 +183,24 @@ interface TaskCardProps {
 export function TaskCard({ task, onClick, onProjectChange }: TaskCardProps) {
   const [expanded, setExpanded] = useState(false);
 
-  const { status, context, project_id } = task;
-  const nodesCompleted: string[] = context?.nodes_completed ?? [];
-  const currentNode: string | null = context?.current_node ?? null;
-  const approvalDeadlineIso: string | null = context?.approval_deadline_iso ?? null;
-  const draftContent: { body?: string; subject?: string } | null = context?.draft_content ?? null;
+  const { status, project_id } = task;
+  const ctx = task.context as Record<string, unknown> | undefined;
+  const nodesCompleted: string[] = (Array.isArray(ctx?.nodes_completed) ? ctx.nodes_completed : []) as string[];
+  const currentNode: string | null = typeof ctx?.current_node === "string" ? ctx.current_node : null;
+  const approvalDeadlineIso: string | null = typeof ctx?.approval_deadline_iso === "string" ? ctx.approval_deadline_iso : null;
+  const draftContent: { body?: string; subject?: string } | null = ctx?.draft_content as typeof draftContent | null ?? null;
 
   const isRunning = status === "running" || status === "executing";
   const isDraft = status === "draft";
   const isCompleted = status === "completed";
   const isFailed = status === "failed";
 
-  const handleCardClick = useCallback(() => {
-    if (isDraft && !expanded) {
-      setExpanded(true);
-      onClick?.();
-    } else if (isDraft && expanded) {
-      setExpanded(false);
-    } else {
-      onClick?.();
-    }
-  }, [isDraft, expanded, onClick]);
-
   return (
     <div
       className={`rounded border bg-zinc-800 p-4 transition ${
         isDraft ? "border-amber-600 hover:border-amber-500" : "border-zinc-700 hover:border-zinc-600"
       }`}
+      onClick={onClick}
     >
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
