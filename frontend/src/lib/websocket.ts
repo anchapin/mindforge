@@ -13,10 +13,9 @@ export type WSMessageType =
   // Proactive events (Phase 3)
   | "billing_anomaly_detected"
   | "calendar_conflict_detected"
-  | "follow_up_draft_created"
-<<<<<<< HEAD
-  | "worker_status_changed"
-  | "pong";
+| "follow_up_draft_created"
+| "worker_status_changed"
+| "pong";
 
 export interface WSMessage {
   type: WSMessageType;
