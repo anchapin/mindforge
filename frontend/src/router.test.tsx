@@ -94,7 +94,6 @@ function buildTestRouter(initialPath: string) {
     getParentRoute: () => rootRoute,
     path: "/",
     beforeLoad: () => {
-      // eslint-disable-next-line @typescript-eslint/no-throw-literal
       throw { redirect: { to: "/tasks" }, _isRedirect: true };
     },
   });
