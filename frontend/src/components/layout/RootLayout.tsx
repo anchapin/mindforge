@@ -5,8 +5,15 @@
  * shell. Page-specific UI lives under <Outlet/>.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
+import { OnboardingWizard } from "../OnboardingWizard";
+import { fetchPreferences } from "../../lib/api";
+import {
+  markOnboardingDismissed,
+  shouldShowOnboarding,
+} from "../../lib/firstRun";
 import { useTaskStore } from "../../stores/taskStore";
 
 interface NavItem {
@@ -24,6 +31,31 @@ const NAV_ITEMS: NavItem[] = [
 export function RootLayout({ children }: { children: ReactNode }) {
   const wsDisconnected = useTaskStore((s) => s.wsDisconnected);
   const location = useLocation();
+  // First-run gate (#46): GET /api/preferences. The backend returns
+  // { id: "" } when the singleton hasn't been created yet — that's our
+  // signal to render the wizard. The wizard is dismissed permanently for
+  // the browser via localStorage AND in component state (because
+  // localStorage writes don't trigger React re-renders by themselves).
+  const { data: prefs, isLoading: prefsLoading } = useQuery({
+    queryKey: ["preferences"],
+    queryFn: fetchPreferences,
+    staleTime: 5 * 60 * 1000,
+    retry: 0,
+  });
+
+  const [dismissedThisSession, setDismissedThisSession] = useState(false);
+
+  const showOnboarding =
+    !dismissedThisSession &&
+    shouldShowOnboarding({
+      preferencesId: prefs?.id,
+      preferencesLoading: prefsLoading,
+    });
+
+  const handleOnboardingDismiss = () => {
+    markOnboardingDismissed();        // persist for future page loads
+    setDismissedThisSession(true);    // hide immediately, this render
+  };
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-900 text-zinc-100">
@@ -74,6 +106,15 @@ export function RootLayout({ children }: { children: ReactNode }) {
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8 space-y-8">
         {children}
       </main>
+
+      {/* First-run onboarding gate (#46). Rendered as a modal overlay so it
+          sits above whatever route is active. */}
+      {showOnboarding && (
+        <OnboardingWizard
+          onComplete={handleOnboardingDismiss}
+          onSkip={handleOnboardingDismiss}
+        />
+      )}
     </div>
   );
 }
