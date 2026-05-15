@@ -28,6 +28,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: "/tasks", label: "Tasks" },
   { to: "/skills", label: "Skills" },
+  { to: "/integrations", label: "Integrations" },
   { to: "/memory", label: "Memory" },
   { to: "/preferences", label: "Preferences" },
 ];
@@ -83,7 +84,6 @@ export function RootLayout({ children }: { children: ReactNode }) {
     } catch (err) {
       // Surface the failure as a console error rather than silently dropping;
       // the user will retry from the next clarification request.
-      // eslint-disable-next-line no-console
       console.error("Clarification submit failed:", err);
     } finally {
       resolveClarification(activeClarification.taskId);

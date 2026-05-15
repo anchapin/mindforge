@@ -1,7 +1,8 @@
 """Task classification and agent role routing.
 
 From SPEC.md §2.1 and §2.2.
-classify_task_type() — keyword rules for episodic memory scoping
+TASK_TYPE_RULES — keyword rules for episodic memory scoping
+classify_task_type() — keyword-based task classifier (zero cost/latency)
 classify_intent() — LLM-based skill intent classifier (for skill routing)
 AGENT_ROLES — system prompts for each agent role
 route_to_agent() — maps task_type to agent role
@@ -15,6 +16,34 @@ from dataclasses import dataclass
 from ..llm.router import InferenceTier, llm_complete
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------------------
+# Task type classification (keyword-based, no LLM)
+# Single source of truth - imported by store.py and supervisor.py
+# ---------------------------------------------------------------------------------------
+
+TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
+    ("github", ["github", "commit", "pr", "pull request", "repository", "git", "branch"]),
+    ("email", ["email", "reply", "inbox", "mail", "send", "draft", "message"]),
+    ("research", ["research", "find", "lookup", "analyze", "competitor", "market", "data"]),
+    ("content", ["write", "blog", "post", "tweet", "linkedin", "content", "copy", "draft"]),
+    ("finance", ["refund", "invoice", "billing", "stripe", "revenue", "cost", "payment"]),
+    ("engineering", ["code", "deploy", "build", "debug", "test", "ship", "api", "bug"]),
+    ("operations", ["schedule", "calendar", "meeting", "task", "project", "coordinate"]),
+]
+
+
+def classify_task_type(query: str) -> str:
+    """Determine task type from query using keyword matching.
+
+    Deterministic, zero latency, zero cost.
+    Returns the first matching task type, or "general".
+    """
+    for task_type, keywords in TASK_TYPE_RULES:
+        if any(kw in query.lower() for kw in keywords):
+            return task_type
+    return "general"
+
 
 # ---------------------------------------------------------------------------------------
 # Agent role definitions

@@ -1,3 +1,7 @@
+/* router.tsx is a router-config module that also defines a tiny inline
+   loading helper. Disable react-refresh/only-export-components for the
+   whole file rather than splitting it into two modules — see PR B notes. */
+/* eslint-disable react-refresh/only-export-components */
 /**
  * TanStack Router configuration (#48).
  *
@@ -32,6 +36,7 @@ const SkillEditPage = lazy(() => import("./routes/SkillEditPage"));
 const MemoryPage = lazy(() => import("./routes/MemoryPage"));
 const PreferencesPage = lazy(() => import("./routes/PreferencesPage"));
 const TaskDebugPage = lazy(() => import("./routes/TaskDebugPage"));
+const IntegrationsPage = lazy(() => import("./routes/IntegrationsPage"));
 
 function RouteFallback() {
   return (
@@ -84,6 +89,12 @@ const preferencesRoute = createRoute({
   component: PreferencesPage,
 });
 
+const integrationsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/integrations",
+  component: IntegrationsPage,
+});
+
 // #49 — SkillEditor lives at two paths: a dedicated /new endpoint and
 // a parameterized /:skillId/edit. The page reads useParams to decide
 // between create and update.
@@ -113,6 +124,7 @@ const routeTree = rootRoute.addChildren([
   skillNewRoute,
   skillEditRoute,
   memoryRoute,
+  integrationsRoute,
   preferencesRoute,
   taskDebugRoute,
 ]);
