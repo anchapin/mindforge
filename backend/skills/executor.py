@@ -113,6 +113,8 @@ async def execute_node(
     ctx: SkillExecutionContext,
     llm_complete: Any,
     tools: Any,
+    agent_identity: str | None = None,
+    integration_configs: dict[str, dict] | None = None,
 ) -> NodeResult:
     """Execute a single skill node.
 
@@ -131,10 +133,36 @@ async def execute_node(
         llm_complete: Async callable(prompt, system, agent_role) -> str.
             In production this is LLMRouter.complete; tests pass a fake.
         tools: ToolRegistry (or any object with a .get(name) -> BaseTool).
+        agent_identity: The agent role executing this node (e.g., 'engineer').
+        integration_configs: Map of integration app_name -> config dict with
+            allowed_agents and permissions fields from the DB.
     """
     scratch = ctx.scratch
 
     try:
+        # Layer 0: Permission enforcement — verify agent can use each tool before LLM call
+        if agent_identity and integration_configs:
+            for tool_name in (node.tools or []):
+                tool = _try_get_tool(tools, tool_name)
+                if tool is None:
+                    continue
+                # Find the integration config for this tool's required integration
+                icfg = None
+                for req_integration in (tool.required_integrations or []):
+                    if req_integration in integration_configs:
+                        icfg = integration_configs[req_integration]
+                        break
+                if icfg:
+                    result = await tool.execute(
+                        action="_permission_check",
+                        agent_identity=agent_identity,
+                        integration_config=icfg,
+                    )
+                    if not result.success:
+                        raise PermissionError(
+                            f"Agent '{agent_identity}' not authorized for tool '{tool_name}': {result.error}"
+                        )
+
         # Layer 1: system prompt — agent identity + goal + tool catalog
         tool_catalog = _format_tool_catalog(node.tools or [], tools)
         system_parts = [
@@ -198,6 +226,8 @@ async def execute_with_retry(
     ctx: SkillExecutionContext,
     llm_complete: Any,
     tools: Any,
+    agent_identity: str | None = None,
+    integration_configs: dict[str, dict] | None = None,
 ) -> NodeResult:
     """Execute a node with retry logic per node.retry config."""
     max_attempts = node.retry.get("max_attempts", 1) if node.retry else 1
@@ -205,7 +235,11 @@ async def execute_with_retry(
 
     last_result: NodeResult | None = None
     for attempt in range(1, max_attempts + 1):
-        result = await execute_node(node, ctx, llm_complete, tools)
+        result = await execute_node(
+            node, ctx, llm_complete, tools,
+            agent_identity=agent_identity,
+            integration_configs=integration_configs,
+        )
         last_result = result
 
         if result.status == "success":
@@ -233,6 +267,8 @@ async def execute_skill(
     tools: Any,
     initial_context: dict[str, Any] | None = None,
     _ws_manager: Any = None,
+    agent_identity: str | None = None,
+    integration_configs: dict[str, dict] | None = None,
 ) -> SkillResult:
     """Execute a skill DAG from start to finish or first approval gate.
 
@@ -248,9 +284,10 @@ async def execute_skill(
         llm_complete: Async callable for LLM inference.
         tools: ToolRegistry or similar.
         initial_context: Optional scratch pad to start with.
-
-    Returns:
-        SkillResult with current execution state.
+        _ws_manager: Optional WebSocket manager for draft notifications.
+        agent_identity: Agent role executing this skill (from skill.agent_role).
+        integration_configs: Map of integration app_name -> config dict with
+            allowed_agents and permissions from the DB.
     """
     graph = skill.execution_graph
     if not graph or not graph.nodes:
@@ -271,7 +308,12 @@ async def execute_skill(
         nodes_completed=[],
         started_at=datetime.utcnow(),
     )
-    return await _execute_dag(ctx, graph, llm_complete, tools, ws_manager=_ws_manager)
+    return await _execute_dag(
+        ctx, graph, llm_complete, tools,
+        ws_manager=_ws_manager,
+        agent_identity=agent_identity,
+        integration_configs=integration_configs,
+    )
 
 
 async def _execute_dag(
@@ -280,6 +322,8 @@ async def _execute_dag(
     llm_complete: Any,
     tools: Any,
     ws_manager: Any = None,
+    agent_identity: str | None = None,
+    integration_configs: dict[str, dict] | None = None,
 ) -> SkillResult:
     """Internal DAG executor — walks edges, handles condition evaluation."""
     node_map: dict[str, SkillNode] = {n.id: n for n in graph.nodes}
@@ -328,7 +372,11 @@ async def _execute_dag(
             )
 
         # Execute the node
-        result = await execute_with_retry(node, ctx, llm_complete, tools)
+        result = await execute_with_retry(
+            node, ctx, llm_complete, tools,
+            agent_identity=agent_identity,
+            integration_configs=integration_configs,
+        )
 
         if result.status == "failure":
             return SkillResult(
@@ -371,6 +419,8 @@ async def execute_skill_continue(
     edited_content: dict[str, Any] | None = None,
     llm_complete: Any = None,
     tools: Any = None,
+    agent_identity: str | None = None,
+    integration_configs: dict[str, dict] | None = None,
 ) -> SkillResult:
     """Resume execution after an approval decision.
 
@@ -380,6 +430,9 @@ async def execute_skill_continue(
         edited_content: If approved with edits, the modified draft.
         llm_complete: LLM callable (required for continuation).
         tools: ToolRegistry (required for continuation).
+        agent_identity: Agent role that was executing the skill.
+        integration_configs: Map of integration app_name -> config dict with
+            allowed_agents and permissions from the DB.
     """
     graph = ctx.skill.execution_graph
     if not graph:
@@ -463,7 +516,11 @@ async def execute_skill_continue(
                 completed_at=datetime.utcnow(),
             )
 
-        result = await execute_with_retry(node, ctx, llm_complete, tools)
+        result = await execute_with_retry(
+            node, ctx, llm_complete, tools,
+            agent_identity=agent_identity,
+            integration_configs=integration_configs,
+        )
 
         if result.status == "failure":
             return SkillResult(

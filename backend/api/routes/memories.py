@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from ...memory.store import SharedMemoryStore
-from ..deps import db_dep, memory_dep
+from ..deps import memory_dep
 
 router = APIRouter(prefix="/api/memories", tags=["memories"])
 
@@ -64,18 +64,19 @@ async def add_semantic(payload: SemanticAdd, memory: SharedMemoryStore = Depends
 
 
 @router.get("/episodic")
-def get_episodic(
+async def get_episodic(
     project_id: str | None = None,
     task_type: str | None = None,
     limit: int = 20,
-    db=Depends(db_dep),
+    memory: SharedMemoryStore = Depends(memory_dep),
 ):
-    rows = db.execute(
-        "SELECT * FROM episodic_memory WHERE (? IS NULL OR project_id = ?) "
-        "AND (? IS NULL OR task_type = ?) ORDER BY created_at DESC LIMIT ?",
-        (project_id, project_id, task_type, task_type, limit),
-    ).fetchall()
-    return {"count": len(rows), "records": [dict(r) for r in rows]}
+    """Get episodic memories - uses async SQLite via SharedMemoryStore."""
+    records = await memory._episodic.query_by_project(
+        project_id=project_id,
+        task_type=task_type,
+        limit=limit,
+    )
+    return {"count": len(records), "records": [r.to_dict() for r in records]}
 
 
 @router.post("/episodic")
@@ -98,14 +99,15 @@ async def add_episodic(payload: EpisodicAdd, memory: SharedMemoryStore = Depends
 
 
 @router.get("/style")
-def get_style(memory: SharedMemoryStore = Depends(memory_dep)):
-    return memory.get_writing_profile().get().to_dict()
+async def get_style(memory: SharedMemoryStore = Depends(memory_dep)):
+    profile = await memory._style.get()
+    return profile.to_dict()
 
 
 @router.put("/style")
-def update_style(payload: StyleUpdate, memory: SharedMemoryStore = Depends(memory_dep)):
+async def update_style(payload: StyleUpdate, memory: SharedMemoryStore = Depends(memory_dep)):
     updates = payload.model_dump(exclude_none=True)
-    profile = memory.get_writing_profile().update_style(updates)
+    profile = await memory._style.update_style(updates)
     return profile.to_dict()
 
 
@@ -116,7 +118,7 @@ async def delete_all_memories(
 ):
     if not confirm:
         raise HTTPException(status_code=400, detail="Must set confirm=true")
-    result = memory.delete_all_memories()
+    result = await memory.delete_all_memories()
     return {"deleted": True, **result}
 
 
@@ -163,11 +165,11 @@ async def delete_episodic_record(
     Pass ``?cascade_steps=true`` to delete those rows alongside the
     episodic record.
     """
-    task_id = memory._episodic.get_task_id(record_id)
+    task_id = await memory._episodic.get_task_id(record_id)
     if task_id is None:
         raise HTTPException(status_code=404, detail="episodic record not found")
 
-    dep_count = memory._episodic.count_dependent_steps(task_id)
+    dep_count = await memory._episodic.count_dependent_steps(task_id)
     cascaded = 0
     if dep_count and not cascade_steps:
         raise HTTPException(
@@ -179,9 +181,9 @@ async def delete_episodic_record(
         )
 
     if dep_count and cascade_steps:
-        cascaded = memory._episodic.delete_dependent_steps(task_id)
+        cascaded = await memory._episodic.delete_dependent_steps(task_id)
 
-    rowcount = memory._episodic.delete(record_id)
+    rowcount = await memory._episodic.delete(record_id)
     if rowcount == 0:
         # Race: another request deleted the row between get_task_id() and now.
         raise HTTPException(status_code=404, detail="episodic record not found")
@@ -197,6 +199,5 @@ async def delete_episodic_record(
 @router.delete("/style")
 async def reset_style(memory: SharedMemoryStore = Depends(memory_dep)):
     """Reset the writing profile to spec defaults (#53). Idempotent."""
-    memory._style.reset()
-    return {"reset": True, "profile": memory._style.get().to_dict()}
-
+    profile = await memory._style.reset()
+    return {"reset": True, "profile": profile.to_dict()}
