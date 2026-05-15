@@ -276,6 +276,7 @@ class TestOAuthCallback:
         assert resp.status_code == 200, resp.text
 
         row = _read_integration(db_path, "gmail")
+        assert row is not None
         fernet = Fernet(os.environ["FERNET_KEY"].encode())
         decrypted = json.loads(
             fernet.decrypt(row["auth_token_enc"].encode()).decode()

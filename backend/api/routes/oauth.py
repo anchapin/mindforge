@@ -133,7 +133,7 @@ async def oauth_start(
             "iat": int(time.time()),
         }
     )
-    logger.info("oauth_start", provider=provider, app=payload.app)
+    logger.info("oauth_start provider=%s app=%s", provider, payload.app)
     return OAuthStartResponse(auth_url=result.auth_url, state=state_token)
 
 
@@ -189,7 +189,7 @@ async def oauth_callback(
         ).fetchone()
         integration_id = existing["id"] if existing else integration_id
 
-    logger.info("oauth_callback_persisted", provider=provider, app=app)
+    logger.info("oauth_callback_persisted provider=%s app=%s", provider, app)
     return OAuthCallbackResponse(
         integration_id=integration_id, app_name=app, broker=creds.get("broker", provider)
     )
