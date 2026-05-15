@@ -165,6 +165,28 @@ export async function fetchPreferences(): Promise<Preferences> {
   return res.json();
 }
 
+/** Partial-update payload for PUT /api/preferences. */
+export interface PreferencesUpdate {
+  proactive_monitoring_enabled?: boolean;
+  email_check_interval_minutes?: number;
+  calendar_check_interval_minutes?: number;
+  billing_alert_threshold_usd?: number;
+  notification_channel?: string;
+  notification_handle?: string | null;
+}
+
+export async function updatePreferences(
+  payload: PreferencesUpdate,
+): Promise<{ status: string; preferences: Preferences }> {
+  const res = await fetch(`${API_BASE}/api/preferences/`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Failed to update preferences: ${res.statusText}`);
+  return res.json();
+}
+
 export interface OnboardingPayload {
   writing_style: {
     tone?: string;
@@ -198,6 +220,76 @@ export async function submitOnboarding(payload: OnboardingPayload): Promise<void
 export async function submitOnboardingSkip(): Promise<void> {
   const res = await fetch(`${API_BASE}/api/onboarding/skip`, { method: "POST" });
   if (!res.ok) throw new Error(`Onboarding skip failed: ${res.statusText}`);
+}
+
+// ---------------------------------------------------------------------------
+// Integrations (#93)
+// ---------------------------------------------------------------------------
+
+export interface Integration {
+  id: string;
+  app_name: string;
+  status: "active" | "revoked" | "error" | "expired";
+  permissions: string[];
+  allowed_agents: string[];
+  last_sync_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function listIntegrations(): Promise<Integration[]> {
+  const res = await fetch(`${API_BASE}/api/integrations/`);
+  if (!res.ok) throw new Error(`Failed to list integrations: ${res.statusText}`);
+  return res.json();
+}
+
+export async function createIntegration(payload: {
+  app_name: string;
+  token: string;
+  permissions?: string[];
+  allowed_agents?: string[];
+}): Promise<Integration> {
+  const res = await fetch(`${API_BASE}/api/integrations/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Failed to create integration: ${res.statusText}`);
+  return res.json();
+}
+
+export async function deleteIntegration(id: string): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/integrations/${id}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error(`Failed to delete integration: ${res.statusText}`);
+}
+
+export async function updateIntegration(
+  id: string,
+  payload: { permissions?: string[]; allowed_agents?: string[] },
+): Promise<Integration> {
+  const res = await fetch(`${API_BASE}/api/integrations/${id}`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Failed to update integration: ${res.statusText}`);
+  return res.json();
+}
+
+export interface IntegrationTestResult {
+  success: boolean;
+  message: string;
+  probed: boolean;
+}
+
+export async function testIntegration(id: string): Promise<IntegrationTestResult> {
+  const res = await fetch(`${API_BASE}/api/integrations/${id}/test`, {
+    method: "POST",
+  });
+  if (!res.ok) throw new Error(`Failed to test integration: ${res.statusText}`);
+  return res.json();
 }
 
 // ---------------------------------------------------------------------------
