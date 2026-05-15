@@ -298,31 +298,32 @@ class LinearTool(BaseTool):  # type: ignore[override]
             "updated_at": issue.get("updatedAt", ""),
         }
 
-    async def validate_auth(self, api_key: str | None = None) -> bool:
-        """Check Linear API key validity with a simple viewer query."""
-        if not api_key:
-            return False
-        query = """
-        query {
-          viewer {
-            id
-            name
-            email
-          }
-        }
+    async def validate_auth(
+        self,
+        token: str | None = None,
+        api_key: str | None = None,
+    ) -> bool:
+        """Validate the Linear API key.
+
+        `token` is the canonical BaseTool parameter name (#44); `api_key`
+        is accepted as an alias to match Linear's own nomenclature and
+        preserve backward compatibility with existing call sites.
+
+        Returns True only when Linear returns 200 to a `viewer { id }`
+        introspection POST. 401/4xx/network-error -> False.
         """
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            try:
-                resp = await integration_call(
-                    "linear",
-                    client.post,
+        key = token or api_key
+        if not key:
+            return False
+        headers = {**LINEAR_HEADERS, "Authorization": f"Bearer {key}"}
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                resp = await client.post(
                     LINEAR_API_URL,
-                    json={"query": query},
-                    headers={
-                        "Authorization": f"Bearer {api_key}",
-                        "Content-Type": "application/json",
-                    },
+                    json={"query": "query { viewer { id } }"},
+                    headers=headers,
                 )
                 return resp.status_code == 200
-            except Exception:
-                return False
+        except Exception as exc:
+            logger.warning("Linear validate_auth failed: %s", exc)
+            return False

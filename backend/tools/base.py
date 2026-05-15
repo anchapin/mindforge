@@ -27,6 +27,15 @@ class BaseTool(ABC):
     async def execute(self, action: str, **kwargs) -> ToolResult: ...
 
     @abstractmethod
-    async def validate_auth(self) -> bool:
-        """Check credentials are present and not expired."""
+    async def validate_auth(self, token: str | None = None) -> bool:
+        """Check the supplied credential is accepted by the integration.
+
+        Implementations should perform a cheap, read-only API call (typically
+        a token-introspection endpoint or a `/me` route) and return:
+          - True  -> 2xx response (token is valid)
+          - False -> 4xx (auth failed) OR network error
+
+        Subclasses that take additional credentials (e.g. IMAP host, SMTP
+        port) may accept extra keyword arguments.
+        """
         ...
