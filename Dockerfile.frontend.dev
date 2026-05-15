@@ -1,0 +1,33 @@
+# syntax=docker/dockerfile:1
+# Dev image for the React/Vite frontend. Runs `vite` with HMR enabled,
+# binding to 0.0.0.0 so the host machine can reach it through the
+# port-mapping declared in compose.yaml (frontend_dev profile).
+#
+# This image is NOT used in production — see Dockerfile.frontend for that.
+
+FROM node:20-alpine
+
+WORKDIR /app
+
+# Install deps using the lock file. We deliberately do NOT copy src/ here;
+# compose mounts the source tree as a bind volume so edits are picked up
+# by HMR without rebuilding the image.
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci
+
+# Copy the rest of the project as a sane fallback when the bind mount is
+# not configured (e.g. running `docker run` directly).
+COPY frontend/ ./
+
+# Vite dev server: 5173 is HMR; 3000 is the user-facing alias to mirror
+# the production port.
+EXPOSE 3000 5173
+
+ENV NODE_ENV=development \
+    HOST=0.0.0.0 \
+    VITE_BACKEND_URL=http://backend:8000
+
+# `--host 0.0.0.0` is required so the dev server is reachable from outside
+# the container; `--port 5173` matches the compose port mapping. The 3000
+# port is reserved for a future reverse proxy alias if we add one.
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0", "--port", "5173", "--strictPort"]
