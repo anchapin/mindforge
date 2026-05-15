@@ -12,10 +12,12 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
+from starlette.responses import StreamingResponse
 
 from ...agents.supervisor import SupervisorRunner
+from ...llm.inference import llm_complete_stream
 from ...memory.episodic import EpisodicMemory
 from ...memory.store import SharedMemoryStore
 from ...skills.trigger import trigger_skill
@@ -289,6 +291,86 @@ def get_task(task_id: str, db=Depends(db_dep)):
     if not row:
         raise HTTPException(status_code=404, detail="Task not found")
     return _row_to_task(row)
+
+
+# ---------------------------------------------------------------------------
+# SSE streaming endpoint (#50, SPEC §5.7.9)
+# ---------------------------------------------------------------------------
+
+
+def _format_sse(payload: str) -> str:
+    """Wrap a payload as one SSE `data:` event (newline-terminated)."""
+    return f"data: {payload}\n\n"
+
+
+async def _sse_token_stream(request: Request, task_description: str, context: dict[str, Any]):
+    """Async generator that yields SSE-formatted tokens from the LLM
+    streaming wrapper. Honours client disconnects so the upstream
+    generator's finally-block runs and any LLM resources are released.
+    """
+    # Build the prompt from the task. Skills compose richer prompts; for
+    # ad-hoc draft streaming the description plus optional context is
+    # the minimum useful surface.
+    prompt = task_description
+    system = ""
+    if isinstance(context, dict) and context.get("system_prompt"):
+        system = str(context["system_prompt"])
+
+    upstream = llm_complete_stream(prompt=prompt, system=system)
+    try:
+        async for token in upstream:
+            if await request.is_disconnected():
+                # Client walked away -- bail out and let upstream.aclose()
+                # in the finally block release the LLM connection.
+                break
+            yield _format_sse(json.dumps({"token": token}))
+    finally:
+        # AsyncGenerator may not have aclose() if the wrapper is a plain
+        # iterator; guard the call.
+        aclose = getattr(upstream, "aclose", None)
+        if aclose is not None:
+            try:
+                await aclose()
+            except Exception:
+                pass
+        # Standard SSE termination sentinel.
+        yield _format_sse("[DONE]")
+
+
+@router.get("/{task_id}/stream")
+async def stream_task_tokens(
+    task_id: str, request: Request, db=Depends(db_dep)
+) -> StreamingResponse:
+    """Stream LLM tokens for a task as SSE events (#50).
+
+    Returns ``text/event-stream`` with one ``data:`` event per token and
+    a final ``data: [DONE]`` sentinel. Honours client disconnect:
+    closes the upstream generator and stops further LLM calls.
+    """
+    row = db.execute(
+        "SELECT id, description, context FROM tasks WHERE id = ?", (task_id,)
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    description = row["description"] if hasattr(row, "keys") else row[1]
+    raw_ctx = row["context"] if hasattr(row, "keys") else row[2]
+    try:
+        ctx = json.loads(raw_ctx) if isinstance(raw_ctx, str) else (raw_ctx or {})
+    except (TypeError, ValueError):
+        ctx = {}
+
+    return StreamingResponse(
+        _sse_token_stream(request, description, ctx),
+        media_type="text/event-stream",
+        headers={
+            # Best-practice SSE headers: disable buffering at proxies.
+            "Cache-Control": "no-cache, no-transform",
+            "X-Accel-Buffering": "no",
+            "Connection": "keep-alive",
+        },
+    )
+
 
 
 @router.post("/{task_id}/approve")
