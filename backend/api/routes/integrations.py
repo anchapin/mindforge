@@ -79,6 +79,7 @@ def _row_to_public(row: sqlite3.Row) -> dict:
         "status": row["status"],
         "permissions": _maybe_json(row["permissions"]),
         "allowed_agents": _maybe_json(row["allowed_agents"]),
+        "last_sync_at": row["last_sync_at"],
         "created_at": row["created_at"],
         "updated_at": row["updated_at"],
     }
@@ -95,7 +96,7 @@ class IntegrationCreate(BaseModel):
 def list_integrations(db: sqlite3.Connection = Depends(db_dep)) -> list[dict]:
     rows = db.execute(
         "SELECT id, app_name, status, permissions, allowed_agents, "
-        "created_at, updated_at FROM integration ORDER BY created_at DESC"
+        "last_sync_at, created_at, updated_at FROM integration ORDER BY created_at DESC"
     ).fetchall()
     return [_row_to_public(r) for r in rows]
 
@@ -147,6 +148,45 @@ def delete_integration(
         raise HTTPException(status_code=404, detail="Integration not found")
     db.commit()
     return {"status": "deleted", "id": integration_id}
+
+
+class IntegrationUpdate(BaseModel):
+    permissions: list[str] = Field(default_factory=list)
+    allowed_agents: list[str] = Field(default_factory=list)
+
+
+@router.put("/{integration_id}", response_model=dict)
+def update_integration(
+    integration_id: str,
+    payload: IntegrationUpdate,
+    db: sqlite3.Connection = Depends(db_dep),
+) -> dict:
+    """Update permissions and/or allowed_agents for an integration."""
+    cur = db.execute(
+        "SELECT id FROM integration WHERE id = ?",
+        (integration_id,),
+    )
+    if cur.fetchone() is None:
+        raise HTTPException(status_code=404, detail="Integration not found")
+
+    db.execute(
+        "UPDATE integration SET permissions = ?, allowed_agents = ?, updated_at = ? "
+        "WHERE id = ?",
+        (
+            json.dumps(payload.permissions),
+            json.dumps(payload.allowed_agents),
+            _now_iso(),
+            integration_id,
+        ),
+    )
+    db.commit()
+
+    row = db.execute(
+        "SELECT id, app_name, status, permissions, allowed_agents, "
+        "created_at, updated_at FROM integration WHERE id = ?",
+        (integration_id,),
+    ).fetchone()
+    return _row_to_public(row)
 
 
 # Map integration `app_name` -> tool registry key. Keep small and explicit;
