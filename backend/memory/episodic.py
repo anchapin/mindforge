@@ -200,6 +200,50 @@ class EpisodicMemoryStore:
             conn.commit()
             return cur.rowcount
 
+    def delete(self, record_id: str) -> int:
+        """Delete a single episodic record by id (#53). Returns rowcount.
+
+        Returns 0 when the id was not found -- callers should map that to
+        an HTTP 404 in the route layer.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute(
+                "DELETE FROM episodic_memory WHERE id = ?", (record_id,)
+            )
+            conn.commit()
+            return cur.rowcount
+
+    def get_task_id(self, record_id: str) -> str | None:
+        """Look up the task_id for an episodic record (#53). Returns None
+        when the record is missing."""
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT task_id FROM episodic_memory WHERE id = ?", (record_id,)
+            ).fetchone()
+            return row[0] if row else None
+
+    def count_dependent_steps(self, task_id: str) -> int:
+        """Count task_step rows that share the given task_id (#53).
+
+        Used by DELETE /api/memories/episodic/{id} to deny deletion when
+        dependent execution context still exists, unless ?cascade_steps=true
+        is passed.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM task_step WHERE task_id = ?", (task_id,)
+            ).fetchone()
+            return int(row[0]) if row else 0
+
+    def delete_dependent_steps(self, task_id: str) -> int:
+        """Cascade-delete task_step rows for a task_id (#53). Returns count."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.execute(
+                "DELETE FROM task_step WHERE task_id = ?", (task_id,)
+            )
+            conn.commit()
+            return cur.rowcount
+
     def delete_by_project(self, project_id: str) -> int:
         """Delete all episodic records for a project (GDPR erasure). Returns count deleted."""
         with sqlite3.connect(self.db_path) as conn:

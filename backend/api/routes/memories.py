@@ -118,3 +118,85 @@ async def delete_all_memories(
         raise HTTPException(status_code=400, detail="Must set confirm=true")
     result = memory.delete_all_memories()
     return {"deleted": True, **result}
+
+
+# ---------------------------------------------------------------------------
+# Per-record deletion (#53, PRIVACY.md / SPEC §3b.5)
+# ---------------------------------------------------------------------------
+
+
+@router.delete("/semantic/{record_id}")
+async def delete_semantic_record(
+    record_id: str,
+    memory: SharedMemoryStore = Depends(memory_dep),
+):
+    """Drop a single semantic memory record from ChromaDB (#53)."""
+    if not memory._semantic.has(record_id) if hasattr(memory._semantic, "has") else False:
+        # If the underlying store doesn't expose has(), fall back to a
+        # count-before / count-after check so we still honour the 404
+        # contract for unknown ids.
+        before = memory._semantic.count()
+        memory._semantic.delete(record_id)
+        after = memory._semantic.count()
+        if before == after:
+            raise HTTPException(status_code=404, detail="semantic record not found")
+        return {"deleted": True, "id": record_id, "count_after": after}
+
+    memory._semantic.delete(record_id)
+    return {
+        "deleted": True,
+        "id": record_id,
+        "count_after": memory._semantic.count(),
+    }
+
+
+@router.delete("/episodic/{record_id}")
+async def delete_episodic_record(
+    record_id: str,
+    cascade_steps: bool = Query(False, description="Delete dependent task_step rows"),
+    memory: SharedMemoryStore = Depends(memory_dep),
+):
+    """Drop a single episodic memory row (#53).
+
+    Dependent ``task_step`` rows for the same ``task_id`` are blocking by
+    default -- the route returns 409 with the count of blocking rows.
+    Pass ``?cascade_steps=true`` to delete those rows alongside the
+    episodic record.
+    """
+    task_id = memory._episodic.get_task_id(record_id)
+    if task_id is None:
+        raise HTTPException(status_code=404, detail="episodic record not found")
+
+    dep_count = memory._episodic.count_dependent_steps(task_id)
+    cascaded = 0
+    if dep_count and not cascade_steps:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"episodic record {record_id} has {dep_count} dependent task_step row(s) "
+                f"for task_id={task_id}; pass ?cascade_steps=true to remove them"
+            ),
+        )
+
+    if dep_count and cascade_steps:
+        cascaded = memory._episodic.delete_dependent_steps(task_id)
+
+    rowcount = memory._episodic.delete(record_id)
+    if rowcount == 0:
+        # Race: another request deleted the row between get_task_id() and now.
+        raise HTTPException(status_code=404, detail="episodic record not found")
+
+    return {
+        "deleted": True,
+        "id": record_id,
+        "task_id": task_id,
+        "cascaded_steps": cascaded,
+    }
+
+
+@router.delete("/style")
+async def reset_style(memory: SharedMemoryStore = Depends(memory_dep)):
+    """Reset the writing profile to spec defaults (#53). Idempotent."""
+    memory._style.reset()
+    return {"reset": True, "profile": memory._style.get().to_dict()}
+
