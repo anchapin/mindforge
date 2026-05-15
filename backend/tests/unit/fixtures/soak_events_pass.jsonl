@@ -1,0 +1,12 @@
+{"ts": "2026-05-15T00:00:00Z", "kind": "harness_start", "run_id": "test-run-1"}
+{"ts": "2026-05-15T00:00:05Z", "kind": "health_probe", "ok": true, "latency_ms": 12.4}
+{"ts": "2026-05-15T00:00:10Z", "kind": "skill_trigger", "skill": "subscription-refund", "task_id": "t1", "ok": true, "status_code": 201}
+{"ts": "2026-05-15T00:00:15Z", "kind": "skill_trigger", "skill": "calendar-conflict", "task_id": "t2", "ok": true, "status_code": 201}
+{"ts": "2026-05-15T00:00:20Z", "kind": "skill_trigger", "skill": "distill-your-own-skill", "task_id": "t3", "ok": true, "status_code": 201}
+{"ts": "2026-05-15T00:00:25Z", "kind": "skill_trigger", "skill": "github-daily-summary", "task_id": "t4", "ok": true, "status_code": 201}
+{"ts": "2026-05-15T00:00:30Z", "kind": "skill_trigger", "skill": "email-followup", "task_id": "t5", "ok": true, "status_code": 201}
+{"ts": "2026-05-15T00:00:35Z", "kind": "container_stats", "container": "backend", "memory_mb": 312.5, "memory_pct": 4.1, "cpu_pct": 2.3}
+{"ts": "2026-05-15T00:00:40Z", "kind": "container_stats", "container": "backend", "memory_mb": 313.2, "memory_pct": 4.1, "cpu_pct": 1.8}
+{"ts": "2026-05-15T00:00:45Z", "kind": "container_stats", "container": "backend", "memory_mb": 314.1, "memory_pct": 4.1, "cpu_pct": 2.1}
+{"ts": "2026-05-15T00:00:50Z", "kind": "metrics_scrape", "ok": false, "reason": "metrics_endpoint_not_implemented"}
+{"ts": "2026-05-15T00:00:55Z", "kind": "harness_stop", "run_id": "test-run-1", "duration_seconds": 55}

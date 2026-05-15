@@ -1,0 +1,5 @@
+{"ts": "2026-05-15T00:00:00Z", "kind": "harness_start", "run_id": "test-run-2"}
+{"ts": "2026-05-15T00:00:05Z", "kind": "health_probe", "ok": true, "latency_ms": 12.4}
+{"ts": "2026-05-15T00:00:10Z", "kind": "skill_trigger", "skill": "subscription-refund", "task_id": "t1", "ok": true, "status_code": 201}
+{"ts": "2026-05-15T00:00:15Z", "kind": "container_restart", "container": "backend", "previous_uptime_seconds": 15}
+{"ts": "2026-05-15T00:00:20Z", "kind": "harness_stop", "run_id": "test-run-2", "duration_seconds": 20}

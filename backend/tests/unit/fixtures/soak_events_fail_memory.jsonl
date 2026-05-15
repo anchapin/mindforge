@@ -1,0 +1,7 @@
+{"ts": "2026-05-15T00:00:00Z", "kind": "harness_start", "run_id": "test-run-3"}
+{"ts": "2026-05-15T00:00:05Z", "kind": "container_stats", "container": "backend", "memory_mb": 100.0, "memory_pct": 1.3, "cpu_pct": 1.0}
+{"ts": "2026-05-15T00:01:00Z", "kind": "container_stats", "container": "backend", "memory_mb": 250.0, "memory_pct": 3.2, "cpu_pct": 1.0}
+{"ts": "2026-05-15T00:02:00Z", "kind": "container_stats", "container": "backend", "memory_mb": 500.0, "memory_pct": 6.4, "cpu_pct": 1.0}
+{"ts": "2026-05-15T00:03:00Z", "kind": "container_stats", "container": "backend", "memory_mb": 900.0, "memory_pct": 11.5, "cpu_pct": 1.0}
+{"ts": "2026-05-15T00:04:00Z", "kind": "container_stats", "container": "backend", "memory_mb": 1500.0, "memory_pct": 19.2, "cpu_pct": 1.0}
+{"ts": "2026-05-15T00:05:00Z", "kind": "harness_stop", "run_id": "test-run-3", "duration_seconds": 300}
