@@ -20,15 +20,17 @@ class GitHubTool(BaseTool):  # type: ignore[override]
     description = "Fetch GitHub commits, issues, PRs for a repository"
     required_integrations = ["github"]
 
-    async def execute(self, action: str, agent_role: str | None = None, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
+    async def execute(
+        self,
+        action: str,
+        agent_identity: str | None = None,
+        integration_config: dict | None = None,
+        **kwargs,
+    ) -> ToolResult:
         """action: commits | issues | prs | create_issue | create_pr"""
         import time
 
         start = time.monotonic()
-
-        # Permission enforcement — block unauthorized agents before any API call
-        if agent_role is not None:
-            self.check_permissions(agent_role, action)
 
         token = kwargs.get("token", "")
         repo = kwargs.get("repo", "")

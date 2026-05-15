@@ -30,14 +30,16 @@ class EmailFetchTool(BaseTool):  # type: ignore[override]
     description = "Fetch emails from IMAP inbox (read-only)"
     required_integrations = ["email"]
 
-    async def execute(self, action: str, agent_role: str | None = None, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
+    async def execute(
+        self,
+        action: str,
+        agent_identity: str | None = None,
+        integration_config: dict | None = None,
+        **kwargs,
+    ) -> ToolResult:
         import asyncio
 
         start = time.monotonic()
-
-        # Permission enforcement — block unauthorized agents before any network call
-        if agent_role is not None:
-            self.check_permissions(agent_role, action)
 
         # OAuth-aware path (#57 part C): when the caller asks for the
         # Composio broker, dispatch through the Composio surface and skip

@@ -31,14 +31,16 @@ class LinearTool(BaseTool):  # type: ignore[override]
     description = "Manage Linear issues: list, create, update, get"
     required_integrations = ["linear"]
 
-    async def execute(self, action: str, agent_role: str | None = None, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
+    async def execute(
+        self,
+        action: str,
+        agent_identity: str | None = None,
+        integration_config: dict | None = None,
+        **kwargs,
+    ) -> ToolResult:
         """action: list_issues | create_issue | update_issue | get_issue"""
 
         start = time.monotonic()
-
-        # Permission enforcement — block unauthorized agents before any API call
-        if agent_role is not None:
-            self.check_permissions(agent_role, action)
 
         api_key = kwargs.get("api_key", "")
         headers = {**LINEAR_HEADERS, "Authorization": f"Bearer {api_key}"}
