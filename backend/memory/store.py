@@ -11,6 +11,7 @@ Key principles:
   - Semantic writes call sanitize_for_memory() first (§3b.8 Layer 1)
   - Semantic reads verify HMAC and exclude tampered entries
   - classify_task_type() keyword rules scope episodic retrieval
+  - TASK_TYPE_RULES imported from routing.py (single source of truth)
 """
 
 from __future__ import annotations
@@ -20,37 +21,12 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
+from ..agents.routing import classify_task_type
 from .episodic import EpisodicMemory, EpisodicMemoryStore
 from .semantic import SemanticMemory
 from .style import WritingProfileStore
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------------------
-# Task type classification (keyword-based, no LLM)
-# ---------------------------------------------------------------------------------------
-
-TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
-    ("github", ["github", "commit", "pr ", "pull request", "repository", "git", "branch"]),
-    ("email", ["email", "reply", "inbox", "mail", "send", "draft", "message"]),
-    ("research", ["research", "find", "lookup", "analyze", "competitor", "market", "data"]),
-    ("content", ["write", "blog", "post", "tweet", "linkedin", "content", "copy", "draft"]),
-    ("finance", ["refund", "invoice", "billing", "stripe", "revenue", "cost", "payment"]),
-    ("engineering", ["code", "deploy", "build", "debug", "test", "ship", "api", "bug"]),
-    ("operations", ["schedule", "calendar", "meeting", "task", "project", "coordinate"]),
-]
-
-
-def classify_task_type(query: str) -> str:
-    """Determine task type from query using keyword matching.
-
-    Deterministic, zero latency, zero cost.
-    Returns the first matching task type, or "general".
-    """
-    for task_type, keywords in TASK_TYPE_RULES:
-        if any(kw in query.lower() for kw in keywords):
-            return task_type
-    return "general"
 
 
 # ---------------------------------------------------------------------------------------
@@ -111,7 +87,12 @@ class SharedMemoryStore:
 
     Write path: enqueued to self._write_queue → background worker processes
                 with deduplication (24h lookback).
+                Queue has maxsize=1000 with overflow protection.
     """
+
+    # Backpressure configuration
+    MAX_QUEUE_SIZE = 1000
+    HIGH_WATERMARK = 750  # 75% - log warning here
 
     def __init__(
         self,
@@ -125,10 +106,12 @@ class SharedMemoryStore:
         self._style = WritingProfileStore(db_path=db_path)
         self._dedup_hours = dedup_lookback_hours
 
-        # Async write queue
-        self._write_queue: asyncio.Queue = asyncio.Queue()
+        # Async write queue with backpressure protection
+        self._write_queue: asyncio.Queue = asyncio.Queue(maxsize=self.MAX_QUEUE_SIZE)
         self._write_worker_task: asyncio.Task | None = None
         self._started = False
+        self._dropped_writes = 0
+        self._high_watermark_logged = False
 
     # ---------------------------------------------------------------------------
     # Lifecycle
@@ -243,13 +226,33 @@ class SharedMemoryStore:
         """Enqueue a memory write. Write happens asynchronously."""
         if not self._started:
             await self.start()
-        await self._write_queue.put(
-            _WriteItem(
-                memory_type=memory_type,
-                content=content,
-                project_id=project_id,
+
+        # Backpressure check - log warning at high watermark
+        queue_size = self._write_queue.qsize()
+        if queue_size >= self.HIGH_WATERMARK and not self._high_watermark_logged:
+            logger.warning(
+                "Write queue at %d/%d (%.0f%%) - backpressure active",
+                queue_size,
+                self.MAX_QUEUE_SIZE,
+                (queue_size / self.MAX_QUEUE_SIZE) * 100,
             )
-        )
+            self._high_watermark_logged = True
+
+        # Try to enqueue, drop on overflow
+        try:
+            self._write_queue.put_nowait(
+                _WriteItem(
+                    memory_type=memory_type,
+                    content=content,
+                    project_id=project_id,
+                )
+            )
+        except asyncio.QueueFull:
+            self._dropped_writes += 1
+            logger.error(
+                "Write queue overflow - dropped write %d. Consider increasing MAX_QUEUE_SIZE or fixing write worker.",
+                self._dropped_writes,
+            )
 
     async def write_semantic(
         self,
