@@ -84,9 +84,10 @@ async def parse_with_recovery(
                 # Fall back to extraction on correction failure
                 break
 
-    # Final fallback - return error
+    # Final fallback - return error with raw response preserved
     return {
         "error": f"JSON parse failed after {max_retries} attempts",
+        "raw_response": response[:500] if len(response) > 500 else response,
         "status": "error",
         "summary": f"{agent_name} parse error",
         "result": "",
