@@ -21,6 +21,7 @@ from pydantic import BaseModel
 
 from backend.api.deps import DB_PATH, db_dep, get_ws_manager, memory_dep
 from backend.skills.registry import get_registry
+from backend.skills.validator import validate_skill_graph
 
 router = APIRouter(prefix="/api/skills", tags=["skills"])
 logger = logging.getLogger(__name__)
@@ -34,41 +35,6 @@ class SkillCreate(BaseModel):
 class SkillRunRequest(BaseModel):
     description: str
     project_id: str | None = None
-
-
-def validate_skill_graph(skill_def: dict) -> list[str]:
-    """Validate skill execution graph. Returns list of errors; empty = valid."""
-    errors: list[str] = []
-    node_ids = {n["id"] for n in skill_def.get("nodes", [])}
-    outgoing: dict[str, list[str]] = {n["id"]: [] for n in skill_def.get("nodes", [])}
-
-    for edge in skill_def.get("edges", []):
-        if edge["from"] not in node_ids:
-            errors.append(f"Edge references missing node: {edge['from']}")
-        if edge["to"] not in node_ids:
-            errors.append(f"Edge references missing node: {edge['to']}")
-        outgoing[edge["from"]].append(edge.get("condition", ""))
-
-    for node in skill_def.get("nodes", []):
-        if node.get("requires_approval") and not outgoing.get(node["id"]):
-            errors.append(f"Node '{node['id']}' requires approval but has no outgoing edges")
-
-    def has_path(from_id: str, visited: set[str]) -> bool:
-        if from_id in visited:
-            errors.append(f"Cycle detected: {from_id}")
-            return True
-        for edge in skill_def.get("edges", []):
-            if edge["from"] == from_id:
-                if has_path(edge["to"], visited | {from_id}):
-                    return True
-        return False
-
-    for node in skill_def.get("nodes", []):
-        if not any(e["to"] == node["id"] for e in skill_def.get("edges", [])):
-            if has_path(node["id"], set()):
-                break
-
-    return errors
 
 
 @router.get("/", response_model=list[dict])
