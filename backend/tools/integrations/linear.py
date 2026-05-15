@@ -31,7 +31,7 @@ class LinearTool(BaseTool):  # type: ignore[override]
     description = "Manage Linear issues: list, create, update, get"
     required_integrations = ["linear"]
 
-    async def _execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
+    async def execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
         """action: list_issues | create_issue | update_issue | get_issue"""
 
         start = time.monotonic()
