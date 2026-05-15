@@ -13,10 +13,14 @@ import { useSystemActivityStore } from "../stores/activityStore";
  *
  * The notification queue is bounded inside the store; this handler stays
  * dumb (no de-dup logic here).
+ *
+ * #106: Updates lastSeenSeq on every message with a server seq.
+ * #109: Tracks correlation_ids from server messages in taskStore.
  */
 export function WSMessageHandler() {
   const queryClient = useQueryClient();
-  const { upsertTask, setWsDisconnected, updateTaskStatus } = useTaskStore();
+  const { upsertTask, setWsDisconnected, updateTaskStatus, setLastSeenSeq, trackCorrelationId } =
+    useTaskStore();
   const pushNotification = useNotificationStore((s) => s.pushNotification);
   const pushClarification = useNotificationStore((s) => s.pushClarification);
   const pushActivity = useSystemActivityStore((s) => s.pushActivity);
@@ -25,6 +29,19 @@ useEffect(() => {
     const ws = getGlobalWS();
 
     const handler = async (msg: WSMessage) => {
+      // #106: update lastSeenSeq so on next reconnect we request replay from this point
+      if (typeof msg.seq === "number") {
+        setLastSeenSeq(msg.seq);
+      }
+      // #109: track correlation_id for client-side log tracing
+      if (msg.correlation_id) {
+        trackCorrelationId(msg.correlation_id);
+        // Include correlation_id in console.debug for all non-stream messages
+        if (msg.type !== "stream_token") {
+          console.debug(`[WS][corr_id=${msg.correlation_id}] ${msg.type}`, msg);
+        }
+      }
+
       switch (msg.type) {
         case "task_created":
         case "task_status_update":
@@ -160,6 +177,8 @@ useEffect(() => {
     upsertTask,
     setWsDisconnected,
     updateTaskStatus,
+    setLastSeenSeq,
+    trackCorrelationId,
     pushNotification,
     pushClarification,
     pushActivity,

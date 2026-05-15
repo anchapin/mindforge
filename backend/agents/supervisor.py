@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -19,36 +20,9 @@ from langgraph.graph import END, StateGraph
 
 from ..memory.store import SharedMemoryStore
 from . import cmo, coo, engineer, researcher
-from .routing import route_to_agent
+from .routing import classify_task_type, route_to_agent
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------------------
-# Task type classification
-# ---------------------------------------------------------------------------------------
-
-TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
-    ("github", ["github", "commit", "pr ", "pull request", "repository", "git"]),
-    ("email", ["email", "reply", "inbox", "mail", "send", "draft"]),
-    ("research", ["research", "find", "look up", "lookup", "analyze", "competitor", "market"]),
-    ("finance", ["refund", "invoice", "billing", "stripe", "revenue", "cost"]),
-    ("engineering", ["code", "deploy", "build", "debug", "ship", "unit test", "auth module"]),
-    ("operations", ["schedule", "calendar", "meeting", "task", "project", "board"]),
-    ("content", ["write", "blog", "post", "tweet", "linkedin", "copy"]),
-]
-
-
-def classify_task_type(query: str) -> str:
-    """Rule-based keyword task classifier. Zero cost, zero latency.
-
-    Used for episodic memory scoping and agent routing.
-    Falls back to LLM-based classify_intent() for skill triggering.
-    """
-    query_lower = query.lower()
-    for task_type, keywords in TASK_TYPE_RULES:
-        if any(kw in query_lower for kw in keywords):
-            return task_type
-    return "general"
 
 
 # ---------------------------------------------------------------------------------------
@@ -72,10 +46,10 @@ class AgentState:
     error: str | None = None
 
     def model_copy(self, update: dict[str, Any]) -> AgentState:
-        """Shallow copy with field updates."""
+        """Deep copy with field updates to prevent nested mutation."""
         import copy
 
-        new_state = copy.copy(self)
+        new_state = copy.deepcopy(self)
         for k, v in update.items():
             setattr(new_state, k, v)
         return new_state
@@ -190,9 +164,20 @@ async def specialist_node(
                 deadline_iso=deadline_iso,
             )
 
+        # Layer 3: Calculate memory_ratio before returning
+        # This enables should_continue() to check if memory-dominated context triggers approval gate
+        memory_context_length = len(memory_context)
+        task_description_length = len(state.current_task)
+        total_length = memory_context_length + task_description_length
+        memory_ratio = memory_context_length / total_length if total_length > 0 else 0.0
+
         return state.model_copy(
             update={
                 "memory_context": memory_context,
+                "context": {
+                    **state.context,
+                    "memory_ratio": memory_ratio,
+                },
                 "result": agent_result,
                 "messages": state.messages
                 + [
@@ -350,8 +335,60 @@ def build_supervisor_graph(
 
 
 # ---------------------------------------------------------------------------------------
-# Supervisor runner
+# Supervisor runner pool for efficient reuse
 # ---------------------------------------------------------------------------------------
+
+_pool_lock = threading.Lock()
+_supervisor_pool: SupervisorRunnerPool | None = None
+
+
+class SupervisorRunnerPool:
+    """Pool of reusable SupervisorRunner instances.
+
+    Pre-compiles LangGraph graphs at startup to avoid expensive recompilation
+    on every task request. Pool size is configurable (default 2).
+    """
+
+    def __init__(self, size: int = 2) -> None:
+        self._size = size
+        self._runners: list[SupervisorRunner] = []
+        self._running: list[SupervisorRunner] = []
+        self._lock = threading.Lock()
+
+    async def initialize(self, memory_store: SharedMemoryStore, checkpointer_path: str | None = None) -> None:
+        """Pre-compile runner instances. Call at startup."""
+        for _ in range(self._size):
+            runner = SupervisorRunner(memory_store, checkpointer_path)
+            self._runners.append(runner)
+
+    async def acquire(self) -> SupervisorRunner:
+        """Get an available runner from the pool."""
+        with self._lock:
+            if self._runners:
+                runner = self._runners.pop()
+                self._running.append(runner)
+                return runner
+            runner = SupervisorRunner.__new__(SupervisorRunner)
+            runner.graph = None  # type: ignore[assignment]
+            runner._memory = None  # type: ignore[assignment]
+            self._running.append(runner)
+            return runner
+
+    async def release(self, runner: SupervisorRunner) -> None:
+        """Return a runner to the pool."""
+        with self._lock:
+            if runner in self._running:
+                self._running.remove(runner)
+            if len(self._runners) < self._size:
+                self._runners.append(runner)
+
+
+def get_supervisor_pool() -> SupervisorRunnerPool:
+    """Get the global SupervisorRunnerPool instance."""
+    global _supervisor_pool
+    if _supervisor_pool is None:
+        _supervisor_pool = SupervisorRunnerPool(size=2)
+    return _supervisor_pool
 
 
 class SupervisorRunner:

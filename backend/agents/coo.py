@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from ..llm.router import InferenceTier, llm_complete
+from .json_utils import parse_with_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -77,14 +78,9 @@ Return a JSON object with these exact fields (no others):
             system="You are the COO agent. Output only valid JSON with summary/result/next_steps fields.",
             tier=InferenceTier.CLOUD_HEAVY,
         )
-        import json
-
-        result = json.loads(response)
+        result = await parse_with_recovery(response, "COO", llm_complete)
         logger.info("COO completed: %s", result.get("summary", ""))
         return result
-    except json.JSONDecodeError as exc:
-        logger.error("COO returned non-JSON: %s", exc)
-        return {"summary": "COO parse error", "result": "", "next_steps": []}
     except Exception as exc:
         logger.exception("COO error: %s", exc)
         return {"summary": f"COO error: {exc}", "result": "", "next_steps": []}

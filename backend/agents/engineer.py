@@ -7,11 +7,11 @@ All code changes require human review before push.
 
 from __future__ import annotations
 
-import json as json_lib
 import logging
 from typing import Any
 
 from ..llm.router import InferenceTier, llm_complete
+from .json_utils import parse_with_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -69,12 +69,9 @@ Return your response as JSON with fields: summary, result, next_steps.
             system="You are the Engineer agent. Output only valid JSON with summary/result/next_steps fields.",
             tier=InferenceTier.CLOUD_HEAVY,
         )
-        result = json_lib.loads(response)
+        result = await parse_with_recovery(response, "Engineer", llm_complete)
         logger.info("Engineer completed: %s", result.get("summary", ""))
         return result
-    except json_lib.JSONDecodeError as exc:
-        logger.error("Engineer returned non-JSON: %s", exc)
-        return {"summary": "Engineer parse error", "result": "", "next_steps": []}
     except Exception as exc:
         logger.exception("Engineer error: %s", exc)
         return {"summary": f"Engineer error: {exc}", "result": "", "next_steps": []}

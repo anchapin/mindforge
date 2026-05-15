@@ -6,11 +6,11 @@ Gathers and analyzes information. Does not take external actions.
 
 from __future__ import annotations
 
-import json as json_lib
 import logging
 from typing import Any
 
 from ..llm.router import InferenceTier, llm_complete
+from .json_utils import parse_with_recovery
 
 logger = logging.getLogger(__name__)
 
@@ -68,12 +68,9 @@ Return your response as JSON with fields: summary, result, next_steps.
             system="You are the Researcher agent. Output only valid JSON with summary/result/next_steps fields.",
             tier=InferenceTier.CLOUD_HEAVY,
         )
-        result = json_lib.loads(response)
+        result = await parse_with_recovery(response, "Researcher", llm_complete)
         logger.info("Researcher completed: %s", result.get("summary", ""))
         return result
-    except json_lib.JSONDecodeError as exc:
-        logger.error("Researcher returned non-JSON: %s", exc)
-        return {"summary": "Researcher parse error", "result": "", "next_steps": []}
     except Exception as exc:
         logger.exception("Researcher error: %s", exc)
         return {"summary": f"Researcher error: {exc}", "result": "", "next_steps": []}

@@ -85,7 +85,7 @@ class ComposioTool(BaseTool):  # type: ignore[override]
     # whitelist check happens inside execute() once the dispatcher is wired.
     required_integrations: list[str] = []
 
-    async def execute(self, action: str, **kwargs) -> ToolResult:  # type: ignore[override]
+    async def _execute(self, action: str, **kwargs) -> ToolResult:  # type: ignore[override]
         start = time.monotonic()
 
         if not _flag_enabled():

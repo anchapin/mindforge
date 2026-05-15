@@ -1,13 +1,15 @@
 """MindForge agents — multi-agent orchestration."""
 
 from . import cmo, coo, engineer, researcher
-from .routing import AGENT_ROLES, RouteResult, classify_intent, route_to_agent
-from .supervisor import (
+from .routing import (
+    AGENT_ROLES,
     TASK_TYPE_RULES,
-    AgentState,
-    SupervisorRunner,
+    RouteResult,
+    classify_intent,
     classify_task_type,
+    route_to_agent,
 )
+from .supervisor import AgentState, SupervisorRunner
 
 __all__ = [
     # Supervisor

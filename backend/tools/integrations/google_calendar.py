@@ -71,7 +71,7 @@ class GoogleCalendarTool(BaseTool):  # type: ignore[override]
     )
     required_integrations: list[str] = ["google_calendar"]
 
-    async def execute(self, action: str, **kwargs) -> ToolResult:  # type: ignore[override]
+    async def _execute(self, action: str, **kwargs) -> ToolResult:  # type: ignore[override]
         start = time.monotonic()
 
         if not _flag_enabled():

@@ -62,8 +62,8 @@ class WSConnectionManager:
     """
 
     def __init__(self):
-        self._connections: dict[str, WebSocket] = {}  # type: ignore[assignment]
-        self._global_connections: list[WebSocket] = []  # type: ignore[assignment]
+        self._connections: dict[str, WebSocket] = {}  # type: ignore[assignment,annotation-unchecked]
+        self._global_connections: list[WebSocket] = []  # type: ignore[assignment,annotation-unchecked]
         self._lock = asyncio.Lock()
 
     async def connect(self, websocket: WebSocket, task_id: str | None = None) -> None:
@@ -201,6 +201,19 @@ class WSConnectionManager:
             task_id,
             {"type": "task_failed", "task_id": task_id, "error": error, "escalated": escalated},
         )
+
+    async def handle_message(self, websocket: WebSocket, task_id: str | None = None, data: dict | None = None) -> None:
+        """Handle inbound client messages: subscribe (replay), ping (heartbeat)."""
+        if data is None:
+            return
+        msg_type = data.get("type")
+        if msg_type == "subscribe":
+            last_seq = data.get("last_sequence", 0)
+            logger.debug("[WS] Client subscribing from seq=%d", last_seq)
+        elif msg_type == "ping":
+            await websocket.send_text(json.dumps({"type": "pong"}))
+        else:
+            logger.debug("[WS] Unknown client message type: %s", msg_type)
 
     async def send_skill_triggered(self, skill_id: str, task_id: str) -> None:
         await self.broadcast({"type": "skill_triggered", "skill_id": skill_id, "task_id": task_id})
