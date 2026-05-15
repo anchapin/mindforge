@@ -122,3 +122,51 @@ export async function searchMemory(query: string): Promise<MemoryEntry[]> {
   if (!res.ok) throw new Error(`Failed to search memory: ${res.statusText}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Preferences + onboarding (#46)
+// ---------------------------------------------------------------------------
+
+export interface Preferences {
+  id: string;  // "" when the singleton row hasn't been created yet (first-run signal)
+  proactive_monitoring_enabled: boolean;
+  email_check_interval_minutes: number;
+  calendar_check_interval_minutes: number;
+  billing_alert_threshold_usd: number;
+  notification_channel: string;
+  notification_handle: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function fetchPreferences(): Promise<Preferences> {
+  const res = await fetch(`${API_BASE}/api/preferences/`);
+  if (!res.ok) throw new Error(`Failed to fetch preferences: ${res.statusText}`);
+  return res.json();
+}
+
+export interface OnboardingPayload {
+  writing_style: {
+    tone?: string;
+    sentence_length?: string;
+    first_person?: string;
+    signature_phrases?: string[];
+    greeting_style?: string;
+    signoff_style?: string;
+  };
+  integrations: Array<{
+    app_name: string;
+    token: string;
+    permissions?: string[];
+    allowed_agents?: string[];
+  }>;
+}
+
+export async function submitOnboarding(payload: OnboardingPayload): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/onboarding/`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error(`Onboarding submission failed: ${res.statusText}`);
+}
