@@ -6,7 +6,6 @@ From SPEC.md Section 3b.5.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator
 from datetime import datetime
 from pathlib import Path
 
@@ -19,95 +18,11 @@ from backend.skills.models import (
     SkillNode,
     TriggerType,
 )
+from backend.skills.validator import validate_skill_graph
 
 logger = logging.getLogger(__name__)
 
 SKILLS_DIR = Path(__file__).parent / "skills"
-
-
-def validate_skill_graph(skill_def: dict) -> list[str]:
-    """Validate a skill execution graph.
-
-    Returns a list of error messages. Empty list means valid.
-    Rules (SPEC.md Section 2.3):
-    1. Every edge references an existing node (both 'from' and 'to')
-    2. Every node with requires_approval has at least one outgoing edge
-    3. No node is its own ancestor (no cycles reachable from start)
-    """
-    errors: list[str] = []
-    nodes = skill_def.get("execution_graph", {}).get("nodes", [])
-    edges = skill_def.get("execution_graph", {}).get("edges", [])
-
-    node_ids = {n["id"] for n in nodes}
-    outgoing: dict[str, list[str]] = {n["id"]: [] for n in nodes}
-
-    # Rule 1: every edge references an existing node
-    for edge in edges:
-        from_id = edge.get("from")
-        to_id = edge.get("to")
-        if from_id not in node_ids:
-            errors.append(f"Edge references missing node: {from_id}")
-        if to_id not in node_ids:
-            errors.append(f"Edge references missing node: {to_id}")
-        if from_id in outgoing:
-            outgoing[from_id].append(edge.get("condition", ""))
-
-    # Rule 2: every approval node has at least one outgoing edge
-    for node in nodes:
-        if node.get("requires_approval"):
-            if not outgoing.get(node["id"]):
-                errors.append(f"Node '{node['id']}' requires approval but has no outgoing edges")
-
-    # Rule 3: no cycles
-    # A cycle exists iff a node is reachable from itself via directed edges.
-    # We detect this with iterative DFS using an on_stack set:
-    # a cycle = encountering a node already on the current DFS stack.
-    # Self-loops are checked explicitly first.
-    for node in nodes:
-        for edge in edges:
-            frm = edge.get("from", "")
-            to = edge.get("to", "")
-            if frm == node["id"] and to == node["id"]:
-                errors.append(f"Self-loop detected on node: {node['id']}")
-
-    class CycleChecker:
-        __slots__ = ("on_stack",)
-
-        def __init__(self) -> None:
-            self.on_stack: set[str] = set()
-
-        def has_cycle_from(self, start: str, visited: set[str]) -> bool:
-            stack: list[tuple[str, Iterator[str]]] = [
-                (start, iter([e.get("to", "") for e in edges if e.get("from") == start]))
-            ]
-            while stack:
-                node_id, neighbors_iter = stack[-1]
-                try:
-                    neighbor: str = next(neighbors_iter)
-                except StopIteration:
-                    stack.pop()
-                    self.on_stack.discard(node_id)
-                    continue
-                if neighbor in self.on_stack:
-                    return True
-                if neighbor in visited:
-                    continue
-                visited.add(neighbor)
-                self.on_stack.add(neighbor)
-                stack.append(
-                    (neighbor, iter([e.get("to", "") for e in edges if e.get("from") == neighbor]))
-                )
-            return False
-
-    if nodes:
-        checker = CycleChecker()
-        visited: set[str] = set()
-        for node_id in {n["id"] for n in nodes}:
-            if node_id not in visited:
-                if checker.has_cycle_from(node_id, visited):
-                    errors.append(f"Cycle detected: {node_id} -> ...")
-
-    return errors
 
 
 class SkillRegistry:
@@ -286,3 +201,6 @@ def get_registry() -> SkillRegistry:
         _registry = SkillRegistry()
         _registry.load_all()
     return _registry
+
+
+__all__ = ['validate_skill_graph', 'get_registry', 'SkillRegistry', 'SKILLS_DIR']
