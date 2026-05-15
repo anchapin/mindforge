@@ -63,6 +63,15 @@ class IntegrationRateLimiter:
         Returns the result of fn.
         """
         semaphore = self._get_semaphore(integration)
+        if semaphore.locked():
+            # Caller had to wait -- record the contention. Best-effort
+            # only; metrics never fail the call (#52).
+            try:
+                from backend.observability.metrics import inc_rate_limit_wait
+
+                inc_rate_limit_wait(integration)
+            except Exception:
+                pass
         async with semaphore:
             return await fn(*args, **kwargs)
 

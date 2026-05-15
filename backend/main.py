@@ -120,6 +120,21 @@ async def health():
     return {"status": "ok", "version": os.getenv("MINDFORGE_VERSION", "0.1.0-alpha")}
 
 
+@app.get("/metrics")
+async def metrics():
+    """Prometheus metrics endpoint (#52, SPEC §5.5).
+
+    Renders the module-private CollectorRegistry from
+    ``backend.observability.metrics`` in the canonical text exposition
+    format. Side-effect free.
+    """
+    from starlette.responses import Response
+
+    from backend.observability.metrics import METRICS_CONTENT_TYPE, get_metrics_text
+
+    return Response(content=get_metrics_text(), media_type=METRICS_CONTENT_TYPE)
+
+
 @app.get("/ready")
 async def ready():
     from backend.db import check_chroma, check_pglite

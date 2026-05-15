@@ -93,6 +93,13 @@ async def _run_agent(
     context: dict[str, Any],
 ) -> dict[str, Any]:
     """Dispatch to the appropriate agent by role."""
+    try:
+        from backend.observability.metrics import inc_agent_invocation
+
+        inc_agent_invocation(agent_role)
+    except Exception:
+        pass
+
     if agent_role == "coo":
         return await coo.run(task_description, memory_context, context)
     elif agent_role == "cmo":
