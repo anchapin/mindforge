@@ -28,6 +28,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { to: "/tasks", label: "Tasks" },
   { to: "/skills", label: "Skills" },
+  { to: "/integrations", label: "Integrations" },
   { to: "/memory", label: "Memory" },
   { to: "/preferences", label: "Preferences" },
 ];
