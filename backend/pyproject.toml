@@ -22,6 +22,7 @@ dependencies = [
     "langchain-anthropic>=0.3.0",
     "langchain-core>=0.3.0",
     "httpx>=0.28.0",
+    "aiosmtplib>=3.0.0,<5.2.0",  # SMTP send for email_send tool (#42)
     "aiohttp>=3.11.0",
     "temporalio>=1.0.0",
     "pglite>=0.2.0",
