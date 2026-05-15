@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import Any
 from threading import Lock
 
