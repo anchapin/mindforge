@@ -1,5 +1,5 @@
 """API route modules."""
 
-from . import integrations, memories, onboarding, preferences, skills, tasks, usage, webhooks
+from . import integrations, memories, oauth, onboarding, preferences, skills, tasks, usage, webhooks
 
-__all__ = ["tasks", "memories", "skills", "integrations", "preferences", "onboarding", "usage", "webhooks"]
+__all__ = ["tasks", "memories", "skills", "integrations", "oauth", "preferences", "onboarding", "usage", "webhooks"]

@@ -10,6 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.api.routes import (
     integrations,
     memories,
+    oauth,
     onboarding,
     preferences,
     skills,
@@ -95,6 +96,7 @@ app.include_router(preferences.router)
 app.include_router(onboarding.router)
 app.include_router(usage.router)
 app.include_router(webhooks.router)
+app.include_router(oauth.router)
 
 
 @app.websocket("/ws")
