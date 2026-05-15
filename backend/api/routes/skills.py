@@ -241,3 +241,41 @@ def create_skill(payload: SkillCreate) -> dict:
     if errors:
         raise HTTPException(status_code=400, detail={"errors": errors})
     return {"id": skill_def.get("name", payload.name), "status": "created"}
+
+
+class SkillUpdate(BaseModel):
+    name: str
+    yaml_content: str
+
+
+@router.put("/{skill_id}", response_model=dict)
+def update_skill(skill_id: str, payload: SkillUpdate) -> dict:
+    """PUT /api/skills/{skill_id} — update an existing skill's YAML on disk.
+
+    From SPEC.md Section 2.3 — the SkillEditor (#49) uses this to persist edits
+    made in the YAML editor. The skill file is rewritten, then the in-memory
+    registry is reloaded so the change takes effect immediately.
+
+    Returns 404 if the skill_id is not found in the registry.
+    """
+    registry = get_registry()
+    existing = registry.get(skill_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail=f"Skill '{skill_id}' not found")
+
+    try:
+        skill_def = yaml.safe_load(payload.yaml_content)
+    except yaml.YAMLError as exc:
+        raise HTTPException(status_code=400, detail=f"YAML parse error: {exc}")
+    errors = validate_skill_graph(skill_def)
+    if errors:
+        raise HTTPException(status_code=400, detail={"errors": errors})
+
+    skill_file = registry._skills_dir / f"{skill_id}.yaml"
+    skill_file.write_text(payload.yaml_content)
+
+    reloaded = registry.load_skill_file(skill_file)
+    if reloaded is None:
+        raise HTTPException(status_code=500, detail=f"Failed to reload skill '{skill_id}' after update")
+
+    return reloaded.model_dump(mode="json")
