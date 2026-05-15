@@ -37,29 +37,47 @@ describe("firstRun helpers", () => {
   describe("shouldShowOnboarding", () => {
     it("returns false while preferences are loading", () => {
       expect(
-        shouldShowOnboarding({ preferencesId: undefined, preferencesLoading: true })
+        shouldShowOnboarding({
+          preferencesOnboardingCompleted: undefined,
+          preferencesLoading: true,
+        })
       ).toBe(false);
     });
 
-    it("returns false when the user has a real preferences id (not first run)", () => {
+    it("returns false when onboarding is already completed", () => {
       expect(
         shouldShowOnboarding({
-          preferencesId: "abc-123",
+          preferencesOnboardingCompleted: true,
           preferencesLoading: false,
         })
       ).toBe(false);
     });
 
-    it("returns true on first run with no dismissal", () => {
+    it("returns true when onboarding has NOT completed and no dismissal", () => {
       expect(
-        shouldShowOnboarding({ preferencesId: "", preferencesLoading: false })
+        shouldShowOnboarding({
+          preferencesOnboardingCompleted: false,
+          preferencesLoading: false,
+        })
       ).toBe(true);
     });
 
-    it("returns false on first run after dismissal", () => {
+    it("treats undefined onboarding_completed as not-yet-onboarded (legacy backend)", () => {
+      expect(
+        shouldShowOnboarding({
+          preferencesOnboardingCompleted: undefined,
+          preferencesLoading: false,
+        })
+      ).toBe(true);
+    });
+
+    it("returns false when user has dismissed in this browser", () => {
       markOnboardingDismissed();
       expect(
-        shouldShowOnboarding({ preferencesId: "", preferencesLoading: false })
+        shouldShowOnboarding({
+          preferencesOnboardingCompleted: false,
+          preferencesLoading: false,
+        })
       ).toBe(false);
     });
   });

@@ -1,7 +1,22 @@
 import { useState } from "react";
+import {
+  submitOnboarding,
+  submitOnboardingSkip,
+  type OnboardingPayload,
+} from "../lib/api";
 
 interface OnboardingWizardProps {
+  /**
+   * Called after a successful POST /api/onboarding (or after the POST fails
+   * in a way that leaves the user with nothing to do — see handleComplete).
+   * The parent typically marks the wizard dismissed in localStorage and
+   * invalidates any preferences query.
+   */
   onComplete?: () => void;
+  /**
+   * Called after a successful POST /api/onboarding/skip. Same parent
+   * responsibility as onComplete.
+   */
   onSkip?: () => void;
 }
 
@@ -41,14 +56,53 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
     setWritingSamples(updated);
   };
 
-  const handleComplete = () => {
-    // The first-run gate (#46) calls onComplete to dismiss the wizard.
-    // Full onboarding POST (writing samples -> writing_profile, integration
-    // tokens -> integration table) happens in a follow-up that adds the
-    // token inputs the current step UI doesn't yet collect. The API
-    // endpoint exists at POST /api/onboarding (see backend issue #34) and
-    // a typed wrapper at frontend/src/lib/api.ts (submitOnboarding).
-    onComplete?.();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [submitError, setSubmitError] = useState<string | null>(null);
+
+  const handleComplete = async () => {
+    // POST /api/onboarding with whatever the user has provided. The current
+    // wizard UI collects writing samples (used to seed the writing profile)
+    // and a list of integration IDs (no tokens yet — credential collection
+    // is a follow-up enhancement; see the deferred bullet on #72).
+    //
+    // We send signature_phrases derived from the non-empty writing samples
+    // so the writing_profile row gets *some* personalization. Integration
+    // entries stay empty until token-collection is added.
+    const payload: OnboardingPayload = {
+      writing_style: {
+        signature_phrases: writingSamples
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0),
+      },
+      integrations: [],
+    };
+    setIsSubmitting(true);
+    setSubmitError(null);
+    try {
+      await submitOnboarding(payload);
+      onComplete?.();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setSubmitError(msg);
+      // Stay open so the user can retry. The parent's dismiss is NOT
+      // called on failure — better UX than silently hiding the modal.
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    // Best-effort skip. Network failures still dismiss locally so the
+    // user isn't trapped — they can re-run onboarding from /preferences.
+    setIsSubmitting(true);
+    try {
+      await submitOnboardingSkip();
+    } catch {
+      // Swallow — local dismiss still happens via onSkip.
+    } finally {
+      setIsSubmitting(false);
+      onSkip?.();
+    }
   };
 
   return (
@@ -59,8 +113,9 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
           <h1 className="text-xl font-semibold text-zinc-100">MindForge Setup</h1>
           {onSkip && (
             <button
-              onClick={onSkip}
-              className="text-sm text-zinc-500 hover:text-zinc-300"
+              onClick={handleSkip}
+              disabled={isSubmitting}
+              className="text-sm text-zinc-500 hover:text-zinc-300 disabled:opacity-50"
             >
               Skip for now →
             </button>
@@ -178,18 +233,28 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
             <p className="mb-4 text-center text-sm text-zinc-500">
               Your job is the chairman. They do the work. You review and approve.
             </p>
+            {submitError && (
+              <div
+                role="alert"
+                className="mb-3 rounded border border-red-700 bg-red-900/30 px-3 py-2 text-sm text-red-300"
+              >
+                Could not save onboarding: {submitError}. Try again?
+              </div>
+            )}
             <div className="flex gap-2">
               <button
                 onClick={() => setStep(2)}
-                className="flex-1 rounded border border-zinc-700 py-2 text-zinc-400 transition hover:border-zinc-600"
+                disabled={isSubmitting}
+                className="flex-1 rounded border border-zinc-700 py-2 text-zinc-400 transition hover:border-zinc-600 disabled:opacity-50"
               >
                 ← Back
               </button>
               <button
                 onClick={handleComplete}
-                className="flex-1 rounded bg-indigo-600 py-2 font-medium text-white transition hover:bg-indigo-500"
+                disabled={isSubmitting}
+                className="flex-1 rounded bg-indigo-600 py-2 font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
               >
-                Launch Dashboard →
+                {isSubmitting ? "Saving…" : "Launch Dashboard →"}
               </button>
             </div>
           </div>

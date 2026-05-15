@@ -1,7 +1,14 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { OnboardingWizard } from "@/components/OnboardingWizard";
+
+// #72 — handleComplete and handleSkip now POST to the backend. Mock both
+// so the existing UI tests don't issue real network calls.
+vi.mock("@/lib/api", () => ({
+  submitOnboarding: vi.fn().mockResolvedValue(undefined),
+  submitOnboardingSkip: vi.fn().mockResolvedValue(undefined),
+}));
 
 describe("OnboardingWizard", () => {
   beforeEach(() => {
@@ -103,10 +110,10 @@ describe("OnboardingWizard", () => {
     }
     await userEvent.click(screen.getByText("Continue →"));
 
-    // Click Launch Dashboard
+    // Click Launch Dashboard (async — handleComplete posts then calls onComplete)
     await userEvent.click(screen.getByText("Launch Dashboard →"));
 
-    expect(onComplete).toHaveBeenCalled();
+    await waitFor(() => expect(onComplete).toHaveBeenCalled());
   });
 
   it("calls onSkip when 'Skip for now' is clicked", async () => {
@@ -115,7 +122,7 @@ describe("OnboardingWizard", () => {
 
     await userEvent.click(screen.getByText("Skip for now →"));
 
-    expect(onSkip).toHaveBeenCalled();
+    await waitFor(() => expect(onSkip).toHaveBeenCalled());
   });
 
   it("disables continue on step 1 if no integration selected", () => {

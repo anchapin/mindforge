@@ -144,13 +144,17 @@ export async function submitClarification(
 // ---------------------------------------------------------------------------
 
 export interface Preferences {
-  id: string;  // "" when the singleton row hasn't been created yet (first-run signal)
+  id: string;
   proactive_monitoring_enabled: boolean;
   email_check_interval_minutes: number;
   calendar_check_interval_minutes: number;
   billing_alert_threshold_usd: number;
   notification_channel: string;
   notification_handle: string | null;
+  // True once POST /api/onboarding (or /api/onboarding/skip) has fired.
+  // Frontend first-run gate keys off this — see #72 for why the previous
+  // `id === ""` signal didn't work in production.
+  onboarding_completed: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -185,4 +189,13 @@ export async function submitOnboarding(payload: OnboardingPayload): Promise<void
     body: JSON.stringify(payload),
   });
   if (!res.ok) throw new Error(`Onboarding submission failed: ${res.statusText}`);
+}
+
+/**
+ * Mark onboarding as complete without writing any profile/integration data.
+ * Used by the wizard's "Skip" button so we don't keep prompting the user.
+ */
+export async function submitOnboardingSkip(): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/onboarding/skip`, { method: "POST" });
+  if (!res.ok) throw new Error(`Onboarding skip failed: ${res.statusText}`);
 }

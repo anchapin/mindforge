@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS writing_profile (
     signature_phrases   TEXT NOT NULL DEFAULT '[]',
     greeting_style      TEXT NOT NULL DEFAULT 'Hi [Name],',
     signoff_style       TEXT NOT NULL DEFAULT 'Cheers',
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -123,6 +124,11 @@ CREATE TABLE IF NOT EXISTS user_preference (
     billing_alert_threshold_usd           INTEGER NOT NULL DEFAULT 50,
     notification_channel                  TEXT NOT NULL DEFAULT 'dashboard',
     notification_handle                   TEXT,
+    -- Set to 1 by POST /api/onboarding (or /api/onboarding/skip). The
+    -- frontend first-run gate keys off this; the singleton row is created
+    -- at first migration so the previous "id == ''" signal never fired
+    -- for real users (#72).
+    onboarding_completed                  INTEGER NOT NULL DEFAULT 0,
     created_at                           TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at                           TEXT NOT NULL DEFAULT (datetime('now'))
 );

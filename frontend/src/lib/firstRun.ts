@@ -43,19 +43,26 @@ export function clearOnboardingDismissed(): void {
 
 /**
  * Compose the full first-run decision: show the gate when BOTH:
- *   - the backend signal says first run (id == "")
+ *   - the backend signal says onboarding hasn't completed
  *   - the user hasn't already dismissed in this browser
  *
  * preferencesLoading covers the in-flight case so we don't flash the modal
  * before we know whether it's needed.
+ *
+ * Pre-#72 this keyed off `preferencesId === ""` (the singleton-not-created
+ * signal) but the singleton row is created at first migration so that
+ * signal never fired for real users. The backend now exposes an explicit
+ * `onboarding_completed` boolean.
  */
 export function shouldShowOnboarding(args: {
-  preferencesId: string | undefined;
+  preferencesOnboardingCompleted: boolean | undefined;
   preferencesLoading: boolean;
 }): boolean {
   if (args.preferencesLoading) return false;
-  const isFirstRun = args.preferencesId === "";
-  if (!isFirstRun) return false;
+  // Treat undefined (e.g. legacy backend response) as "not yet onboarded"
+  // so old API responses still trigger the gate.
+  const completed = args.preferencesOnboardingCompleted === true;
+  if (completed) return false;
   return !hasUserDismissedOnboarding();
 }
 
