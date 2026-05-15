@@ -30,7 +30,13 @@ class EmailFetchTool(BaseTool):  # type: ignore[override]
     description = "Fetch emails from IMAP inbox (read-only)"
     required_integrations = ["email"]
 
-    async def execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
+    async def execute(
+        self,
+        action: str,
+        agent_identity: str | None = None,
+        integration_config: dict | None = None,
+        **kwargs,
+    ) -> ToolResult:
         import asyncio
 
         start = time.monotonic()

@@ -18,8 +18,8 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
-from typing import Any
 from threading import Lock
+from typing import Any
 
 from .episodic import EpisodicMemory, EpisodicMemoryStore
 from .semantic import SemanticMemory
@@ -137,7 +137,7 @@ class WriteQueueMetrics:
         with self._lock:
             self.watermark_warnings += 1
 
-    def to_dict(self) -> dict[str, int]:
+    def to_dict(self) -> dict[str, Any]:
         with self._lock:
             return {
                 "writes_enqueued": self.writes_enqueued,

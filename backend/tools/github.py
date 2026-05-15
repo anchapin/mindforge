@@ -20,7 +20,13 @@ class GitHubTool(BaseTool):  # type: ignore[override]
     description = "Fetch GitHub commits, issues, PRs for a repository"
     required_integrations = ["github"]
 
-    async def execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
+    async def execute(
+        self,
+        action: str,
+        agent_identity: str | None = None,
+        integration_config: dict | None = None,
+        **kwargs,
+    ) -> ToolResult:
         """action: commits | issues | prs | create_issue | create_pr"""
         import time
 
