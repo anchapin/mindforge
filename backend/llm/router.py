@@ -230,11 +230,52 @@ class LLMRouter:
 
         cfg = TIER_CONFIGS[tier]
 
-        if cfg.tier == InferenceTier.LOCAL:
-            return await self._ollama_complete(cfg, system, prompt)
-        return await self._openrouter_complete(
-            cfg, system, prompt, stream=stream, agent_role=agent_role
-        )
+        # Best-effort observability hook (#52). Streaming returns an async
+        # generator -- timing it requires consuming the generator, which
+        # we don't want to do here, so streams are recorded as a
+        # "started" outcome only and downstream observers can fold the
+        # full duration in if they care.
+        try:
+            from backend.observability.metrics import record_llm_call
+        except Exception:  # pragma: no cover
+            record_llm_call = None  # type: ignore[assignment]
+
+        import time as _time
+
+        _start = _time.monotonic()
+        result: str | AsyncGenerator[str, None]
+
+        try:
+            if cfg.tier == InferenceTier.LOCAL:
+                result = await self._ollama_complete(cfg, system, prompt)
+            else:
+                result = await self._openrouter_complete(
+                    cfg, system, prompt, stream=stream, agent_role=agent_role
+                )
+            outcome = "stream_started" if stream else "success"
+            if record_llm_call is not None:
+                try:
+                    record_llm_call(
+                        tier=cfg.tier.value if hasattr(cfg.tier, "value") else str(cfg.tier),
+                        model=cfg.model,
+                        outcome=outcome,
+                        duration_seconds=_time.monotonic() - _start,
+                    )
+                except Exception:
+                    pass
+            return result
+        except Exception:
+            if record_llm_call is not None:
+                try:
+                    record_llm_call(
+                        tier=cfg.tier.value if hasattr(cfg.tier, "value") else str(cfg.tier),
+                        model=cfg.model,
+                        outcome="failure",
+                        duration_seconds=_time.monotonic() - _start,
+                    )
+                except Exception:
+                    pass
+            raise
 
     async def _ollama_complete(self, cfg: LLMConfig, system: str, prompt: str) -> str:
         """Call local Ollama server."""

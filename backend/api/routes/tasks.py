@@ -135,6 +135,16 @@ async def _execute_task(
             final_status = (
                 "completed" if skill_result.status in ("completed", "draft") else "failed"
             )
+
+            # Best-effort skill metric (#52). Skills can resolve to "completed",
+            # "draft" (waiting on approval), or "failed" -- record outcome
+            # buckets so dashboards can spot regressions.
+            try:
+                from backend.observability.metrics import inc_skill_run
+
+                inc_skill_run(matched_skill.id, skill_result.status)
+            except Exception:
+                pass
             result_context = {
                 "skill_id": matched_skill.id,
                 "task_type": "skill",

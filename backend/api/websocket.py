@@ -73,13 +73,29 @@ class WSConnectionManager:
                 self._connections[task_id] = websocket
             else:
                 self._global_connections.append(websocket)
+        try:
+            from backend.observability.metrics import inc_ws_connection
+
+            inc_ws_connection()
+        except Exception:
+            pass
 
     async def disconnect(self, websocket: WebSocket, task_id: str | None = None) -> None:
+        removed = False
         async with self._lock:
             if task_id and task_id in self._connections:
                 del self._connections[task_id]
+                removed = True
             elif websocket in self._global_connections:
                 self._global_connections.remove(websocket)
+                removed = True
+        if removed:
+            try:
+                from backend.observability.metrics import dec_ws_connection
+
+                dec_ws_connection()
+            except Exception:
+                pass
 
     async def send(self, task_id: str, message: dict) -> None:
         message = _scrub(message)  # type: ignore[assignment]
