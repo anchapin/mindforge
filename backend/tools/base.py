@@ -24,7 +24,13 @@ class BaseTool(ABC):
     required_integrations: list[str] = []
 
     @abstractmethod
-    async def execute(self, action: str, **kwargs) -> ToolResult: ...
+    async def execute(
+        self,
+        action: str,
+        agent_identity: str | None = None,
+        integration_config: dict | None = None,
+        **kwargs,
+    ) -> ToolResult: ...
 
     @abstractmethod
     async def validate_auth(self, token: str | None = None) -> bool:
