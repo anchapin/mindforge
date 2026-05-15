@@ -19,7 +19,7 @@ class StripeTool(BaseTool):  # type: ignore[override]
     description = "Stripe API: fetch revenue/charges/customers; issue refunds (refund is high-stakes — requires_approval must be true)"
     required_integrations = ["stripe"]
 
-    async def _execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
+    async def execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
         start = time.monotonic()
 
         api_key = kwargs.get("api_key", "")
