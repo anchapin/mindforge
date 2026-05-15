@@ -54,7 +54,13 @@ class EmailSendTool(BaseTool):  # type: ignore[override]
     description = "Send an email via SMTP (after human approval — high-stakes)"
     required_integrations = ["email"]
 
-    async def execute(self, action: str, **kwargs) -> ToolResult:  # type: ignore[override]
+    async def execute(
+        self,
+        action: str,
+        agent_identity: str | None = None,
+        integration_config: dict | None = None,
+        **kwargs,
+    ) -> ToolResult:
         start = time.monotonic()
         if action != ACTION_SEND:
             return ToolResult(
