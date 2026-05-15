@@ -1,0 +1,145 @@
+# .github/workflows/release.yml
+#
+# Tag-triggered release pipeline (#54). Fires on `v*.*.*` tag pushes and
+# also on `workflow_dispatch` for manual re-runs.
+#
+# Steps:
+#   1. Validate the tag matches a valid semver
+#   2. Extract the matching CHANGELOG section as the release body
+#   3. Build & push the backend + frontend images to ghcr.io with the tag
+#      AND the `latest` mutable alias
+#   4. Create a GitHub Release with the CHANGELOG section as the description
+#      and the pinned compose.yaml + CHANGELOG.md as attached artefacts
+#
+# Manual usage:
+#   gh workflow run release.yml -f tag=v0.2.1
+#   git tag -a v0.2.1 -m "0.2.1 — stabilization" && git push origin v0.2.1
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v[0-9]+.[0-9]+.[0-9]+"
+      - "v[0-9]+.[0-9]+.[0-9]+-*"  # pre-releases (e.g. v0.2.0-alpha)
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to release (e.g. v0.2.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write    # create the GitHub Release
+  packages: write    # push to ghcr.io
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.resolve.outputs.tag }}
+      version: ${{ steps.resolve.outputs.version }}
+      changelog: ${{ steps.changelog.outputs.section }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Resolve tag
+        id: resolve
+        run: |
+          if [ -n "${{ inputs.tag }}" ]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF#refs/tags/}"
+          fi
+          # Strip leading 'v' for the version slot (matches CHANGELOG headers
+          # which use bare semver, e.g. "## [0.2.1]").
+          VERSION="${TAG#v}"
+          echo "tag=$TAG"        >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "Resolved: tag=$TAG version=$VERSION"
+
+      - name: Extract CHANGELOG section
+        id: changelog
+        run: |
+          chmod +x scripts/extract_changelog.sh
+          SECTION=$(scripts/extract_changelog.sh "${{ steps.resolve.outputs.version }}" CHANGELOG.md)
+          if [ -z "$SECTION" ]; then
+            echo "::error::No CHANGELOG section found for version ${{ steps.resolve.outputs.version }}"
+            exit 1
+          fi
+          # Multi-line output via heredoc so newlines survive
+          {
+            echo "section<<EOF_CHANGELOG"
+            echo "$SECTION"
+            echo "EOF_CHANGELOG"
+          } >> "$GITHUB_OUTPUT"
+
+  build-images:
+    runs-on: ubuntu-latest
+    needs: [prepare]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.backend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/backend:${{ needs.prepare.outputs.tag }}
+            ghcr.io/${{ github.repository }}/backend:latest
+
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: Dockerfile.frontend
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository }}/frontend:${{ needs.prepare.outputs.tag }}
+            ghcr.io/${{ github.repository }}/frontend:latest
+
+  release:
+    runs-on: ubuntu-latest
+    needs: [prepare, build-images]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Stage release artefacts
+        run: |
+          mkdir -p dist
+          cp compose.yaml dist/compose-${{ needs.prepare.outputs.tag }}.yaml
+          cp CHANGELOG.md dist/CHANGELOG-${{ needs.prepare.outputs.tag }}.md
+
+      - name: Determine prerelease flag
+        id: prerel
+        run: |
+          # Anything with -alpha / -beta / -rc is a prerelease.
+          if [[ "${{ needs.prepare.outputs.tag }}" =~ -(alpha|beta|rc) ]]; then
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ needs.prepare.outputs.tag }}
+          name: "MindForge ${{ needs.prepare.outputs.tag }}"
+          body: ${{ needs.prepare.outputs.changelog }}
+          prerelease: ${{ steps.prerel.outputs.prerelease == 'true' }}
+          files: |
+            dist/compose-${{ needs.prepare.outputs.tag }}.yaml
+            dist/CHANGELOG-${{ needs.prepare.outputs.tag }}.md
