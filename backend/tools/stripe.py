@@ -19,8 +19,12 @@ class StripeTool(BaseTool):  # type: ignore[override]
     description = "Stripe API: fetch revenue/charges/customers; issue refunds (refund is high-stakes — requires_approval must be true)"
     required_integrations = ["stripe"]
 
-    async def execute(self, action: str, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
+    async def execute(self, action: str, agent_role: str | None = None, **kwargs) -> ToolResult:  # noqa: C901  # type: ignore[override]
         start = time.monotonic()
+
+        # Permission enforcement — block unauthorized agents before any API call
+        if agent_role is not None:
+            self.check_permissions(agent_role, action)
 
         api_key = kwargs.get("api_key", "")
         headers = {"Authorization": f"Bearer {api_key}"}

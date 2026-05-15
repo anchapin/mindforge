@@ -98,6 +98,7 @@ class SemanticMemory:
     ):
         self.hmac_key = hmac_key or self._derive_hmac_key()
         self._chunk_config = ChunkConfig()
+        self._degraded = False  # True when ChromaDB operations fail
 
         if chroma_dir:
             # Persistent local ChromaDB
@@ -119,6 +120,15 @@ class SemanticMemory:
         self._bm25_index: BM25Okapi | None = None
         self._bm25_corpus: list[str] = []
         self._bm25_ids: list[str] = []
+
+    @property
+    def degraded(self) -> bool:
+        """True when ChromaDB has been unavailable for a recent operation."""
+        return self._degraded
+
+    def _set_degraded(self) -> None:
+        """Mark this store as degraded due to ChromaDB unavailability."""
+        self._degraded = True
 
     # ---------------------------------------------------------------------------
     # HMAC helpers
@@ -381,6 +391,29 @@ class SemanticMemory:
 
         This is the primary retrieval method used by SharedMemoryStore.
         On ChromaDB failure, returns empty list with degraded_quality flag.
+        """
+        try:
+            return await self._retrieve_impl(query, project_id, top_k, use_bm25)
+        except Exception as exc:
+            logger.warning(
+                "ChromaDB retrieval failed, returning empty list (degraded mode): %s",
+                exc,
+            )
+            self._set_degraded()
+            return []
+
+    async def _retrieve_impl(
+        self,
+        query: str,
+        project_id: str | None = None,
+        top_k: int = 5,
+        use_bm25: bool = True,
+    ) -> list[SemanticMemoryRecord]:
+        """Internal implementation of hybrid retrieval.
+
+        Raises:
+            Exception: Any ChromaDB or embedding failure propagates to trigger
+                       graceful degradation in retrieve().
         """
         try:
             from rank_bm25 import BM25Okapi  # noqa: F401

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import logging
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -20,81 +19,124 @@ class ToolResult:
     latency_ms: float = 0.0
 
 
+class PermissionDeniedError(Exception):
+    """Raised when an agent attempts an action it is not authorized for."""
+
+    def __init__(self, agent_role: str, tool_name: str, action: str, reason: str = ""):
+        self.agent_role = agent_role
+        self.tool_name = tool_name
+        self.action = action
+        self.reason = reason
+        super().__init__(
+            f"Permission denied: agent '{agent_role}' cannot perform '{action}' "
+            f"on tool '{tool_name}'{f' ({reason})' if reason else ''}"
+        )
+
+
 class BaseTool(ABC):
     name: str = ""
     description: str = ""
     input_schema: dict = {}
     retry_config: dict = {"max_attempts": 3, "backoff_factor": 2, "jitter": True}
     required_integrations: list[str] = []
-    allowed_agents: list[str] | None = None
 
-    async def execute(
-        self,
-        action: str,
-        agent_identity: str | None = None,
-        integration_config: dict | None = None,
-        **kwargs,
-    ) -> ToolResult:
-        """Execute a tool action with optional permission enforcement.
+    # Permission scoping — set per-tool or per-integration in DB
+    # Allowed agent roles (e.g. ["engineer", "coo"]). Empty = block all.
+    allowed_agents: list[str] = []
+    # Action-specific permissions (e.g. {"refund": ["write"], "balance": ["read"]})
+    # If an action is not listed, defaults to ["read"].
+    permissions: dict[str, list[str]] = {}
 
-        Args:
-            action: The action to perform (e.g., 'send', 'refund', 'commits')
-            agent_identity: The name of the agent calling this tool (e.g., 'cmo', 'engineer')
-            integration_config: Integration config from DB (with allowed_agents, permissions)
-            **kwargs: Action-specific parameters
+    def get_permission_for_action(self, action: str) -> str:
+        """Return the permission level required for an action.
 
-        Returns:
-            ToolResult with success status, data, or error
+        Returns 'write' for high-stakes actions, 'read' for everything else.
+        Override to customize per-tool.
         """
-        import time
+        # High-stakes write actions (destructive/modifying)
+        high_stakes = {
+            "refund",
+            "send",
+            "send_email",
+            "delete",
+            "push",
+            "create_pr",
+            "merge_pr",
+            "create_issue",
+        }
+        if action in high_stakes:
+            return "write"
+        return "read"
 
-        start = time.monotonic()
+    def check_permissions(self, agent_role: str, action: str) -> None:
+        """Validate that agent_role is allowed to perform action.
 
-        if agent_identity and integration_config:
-            allowed_agents = integration_config.get("allowed_agents")
-            if allowed_agents:
-                if isinstance(allowed_agents, str):
-                    allowed_agents = json.loads(allowed_agents)
-                if agent_identity not in allowed_agents:
-                    logger.warning(
-                        "Tool %s unauthorized for agent %s (allowed: %s)",
-                        self.name,
-                        agent_identity,
-                        allowed_agents,
-                    )
-                    return ToolResult(
-                        success=False,
-                        error=f"Agent '{agent_identity}' not authorized for {self.name}",
-                        tool_name=self.name,
-                        latency_ms=(time.monotonic() - start) * 1000,
-                    )
+        Raises PermissionDeniedError if:
+        - agent_role is None (no identity available — deny by default)
+        - allowed_agents is non-empty and agent_role is not in it
+        - the required permission for action is not granted
 
-            permissions = integration_config.get("permissions")
-            if permissions:
-                if isinstance(permissions, str):
-                    permissions = json.loads(permissions)
-                required_action = f"{self.name}:{action}"
-                allowed_actions = permissions.get("allowed_actions", [])
-                if required_action not in allowed_actions:
-                    logger.warning(
-                        "Tool %s action %s not permitted for agent %s",
-                        self.name,
-                        action,
-                        agent_identity,
-                    )
-                    return ToolResult(
-                        success=False,
-                        error=f"Permission '{required_action}' not granted for {self.name}",
-                        tool_name=self.name,
-                        latency_ms=(time.monotonic() - start) * 1000,
-                    )
+        Logs the denial with full context.
+        """
+        if agent_role is None:
+            # No agent identity — deny by default to prevent bypass via
+            # callers that don't propagate agent context.
+            logger.warning(
+                "Permission denied: no agent_role supplied for tool '%s' (action=%s)",
+                self.name,
+                action,
+            )
+            raise PermissionDeniedError(
+                agent_role="<none>",
+                tool_name=self.name,
+                action=action,
+                reason="no agent identity provided",
+            )
 
-        return await self._execute(action, **kwargs)
+        # Check allowed_agents — empty list means block all
+        if self.allowed_agents and agent_role not in self.allowed_agents:
+            logger.warning(
+                "Permission denied: agent '%s' is not in allowed_agents for tool '%s' "
+                "(allowed: %s, requested action: %s)",
+                agent_role,
+                self.name,
+                self.allowed_agents,
+                action,
+            )
+            raise PermissionDeniedError(
+                agent_role=agent_role,
+                tool_name=self.name,
+                action=action,
+                reason=f"agent '{agent_role}' is not permitted to use this tool",
+            )
+
+        # Check action-specific permission
+        required_perm = self.get_permission_for_action(action)
+        granted_perms = self.permissions.get(action, ["read"])
+
+        # If the tool has no explicit permissions dict, assume ["read"] is enough
+        if not self.permissions and required_perm == "read":
+            return
+
+        if required_perm not in granted_perms:
+            logger.warning(
+                "Permission denied: action '%s' on tool '%s' requires '%s' permission, "
+                "but agent '%s' only has %s",
+                action,
+                self.name,
+                required_perm,
+                agent_role,
+                granted_perms,
+            )
+            raise PermissionDeniedError(
+                agent_role=agent_role,
+                tool_name=self.name,
+                action=action,
+                reason=f"action '{action}' requires '{required_perm}' permission",
+            )
 
     @abstractmethod
-    async def _execute(self, action: str, **kwargs) -> ToolResult:
-        """Internal execute implementation. Override in subclasses."""
-        ...
+    async def execute(self, action: str, agent_role: str | None = None, **kwargs) -> ToolResult: ...
 
     @abstractmethod
     async def validate_auth(self, token: str | None = None) -> bool:

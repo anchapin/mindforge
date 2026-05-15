@@ -83,8 +83,12 @@ class MemoryResult:
 
 
 def format_combined_context(results: list[MemoryResult]) -> str:
-    """Combine heterogeneous memory results into a single context string for prompt injection."""
-    sections = [r.to_prompt_block() for r in results if r.records]
+    """Combine heterogeneous memory results into a single context string for prompt injection.
+
+    degraded_quality blocks are included even when records is empty so the LLM knows
+    about the degraded state and can surface a warning to the user.
+    """
+    sections = [r.to_prompt_block() for r in results if r.records or r.degraded_quality]
     return "\n\n".join(sections)
 
 

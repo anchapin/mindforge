@@ -54,8 +54,13 @@ class EmailSendTool(BaseTool):  # type: ignore[override]
     description = "Send an email via SMTP (after human approval — high-stakes)"
     required_integrations = ["email"]
 
-    async def execute(self, action: str, **kwargs) -> ToolResult:  # type: ignore[override]
+    async def execute(self, action: str, agent_role: str | None = None, **kwargs) -> ToolResult:  # type: ignore[override]
         start = time.monotonic()
+
+        # Permission enforcement — block unauthorized agents before any SMTP call
+        if agent_role is not None:
+            self.check_permissions(agent_role, action)
+
         if action != ACTION_SEND:
             return ToolResult(
                 success=False,
