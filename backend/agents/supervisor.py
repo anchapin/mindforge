@@ -226,6 +226,8 @@ def is_high_stakes_action(action: str) -> bool:
 
 def requires_memory_approval_gate(action: str, memory_context_ratio: float) -> bool:
     """Return True if memory-dominated context (>50%) + high-stakes action triggers approval gate."""
+    if not is_high_stakes_action(action):
+        return False
     return memory_context_ratio > 0.5
 
 
