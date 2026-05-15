@@ -21,6 +21,7 @@ from backend.api.websocket import ws_manager
 from backend.db.migrate import run_migrations
 from backend.llm.router import LLM_ROUTER
 from backend.scheduler.temporal_app import TemporalClient
+from backend.tools.registry import register_all_tools
 
 logger = structlog.get_logger()
 
@@ -43,6 +44,16 @@ async def lifespan(app: FastAPI):
         await LLM_ROUTER.initialize()
     except Exception as exc:
         logger.warning("llm_router_init_failed", exc=str(exc))
+
+    # Register all built-in tools so the integrations API can probe them
+    # and skill executors can resolve names like "stripe_api" / "email_send".
+    # Without this every POST /api/integrations/{id}/test returns
+    # "No tool 'X' registered" — the tool registry is empty at runtime
+    # because nothing else in the app calls register_all_tools() (#42-#44 P1).
+    try:
+        register_all_tools()
+    except Exception as exc:
+        logger.warning("tool_registry_init_failed", exc=str(exc))
 
     # Initialize Temporal (Phase 3 — gated by ENABLE_TEMPORAL env var; stays in
     # stub mode when disabled so the rest of the API still serves requests).
