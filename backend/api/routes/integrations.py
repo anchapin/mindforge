@@ -133,7 +133,7 @@ def create_integration(
 
     row = db.execute(
         "SELECT id, app_name, status, permissions, allowed_agents, "
-        "created_at, updated_at FROM integration WHERE id = ?",
+        "last_sync_at, created_at, updated_at FROM integration WHERE id = ?",
         (integration_id,),
     ).fetchone()
     return _row_to_public(row)
@@ -183,7 +183,7 @@ def update_integration(
 
     row = db.execute(
         "SELECT id, app_name, status, permissions, allowed_agents, "
-        "created_at, updated_at FROM integration WHERE id = ?",
+        "last_sync_at, created_at, updated_at FROM integration WHERE id = ?",
         (integration_id,),
     ).fetchone()
     return _row_to_public(row)
