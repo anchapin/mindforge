@@ -122,3 +122,19 @@ export async function searchMemory(query: string): Promise<MemoryEntry[]> {
   if (!res.ok) throw new Error(`Failed to search memory: ${res.statusText}`);
   return res.json();
 }
+
+// ---------------------------------------------------------------------------
+// Clarification protocol (#47)
+// ---------------------------------------------------------------------------
+
+export async function submitClarification(
+  taskId: string,
+  response: string,
+): Promise<void> {
+  const res = await fetch(`${API_BASE}/api/tasks/${taskId}/clarification`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ decision: response }),
+  });
+  if (!res.ok) throw new Error(`Clarification submission failed: ${res.statusText}`);
+}

@@ -2,7 +2,6 @@ import { useQuery } from "@tanstack/react-query";
 import { listTasks } from "../lib/api";
 import { useTaskStore } from "../stores/taskStore";
 import { TaskCard } from "./TaskCard";
-import { WSMessageHandler } from "./WSMessageHandler";
 
 export function TaskTracker() {
   const { data: tasks = [], isLoading } = useQuery({
@@ -23,7 +22,6 @@ export function TaskTracker() {
 
   return (
     <div className="space-y-6">
-      <WSMessageHandler />
 
       {isLoading && <p className="text-zinc-500">Loading tasks...</p>}
 
