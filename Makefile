@@ -1,4 +1,4 @@
-.PHONY: help setup dev test lint fmt clean logs docker-up docker-down migrate
+.PHONY: help setup dev dev-host dev-down test lint fmt clean logs docker-up docker-down migrate
 
 help:
 	@grep -E '^[a-zA-Z_-]+:' Makefile | sed 's/:.*//'
@@ -10,10 +10,23 @@ setup:  ## First-time setup
 	docker compose --profile dev up -d
 	@echo "Setup complete. Run 'make dev' to start."
 
-dev:  ## Start development environment
-	docker compose --profile dev up -d
+dev:  ## Start full dev stack via compose (backend + frontend_dev + chroma + ollama)
+	docker compose --profile dev up -d --build
+	@echo ""
+	@echo "Frontend (Vite HMR):  http://127.0.0.1:5173"
+	@echo "Backend API:          http://127.0.0.1:8000"
+	@echo "Backend health:       http://127.0.0.1:8000/health"
+	@echo ""
+	@echo "Tail logs with:  make logs"
+	@echo "Stop with:       make dev-down"
+
+dev-host:  ## Start backend in compose, frontend on host (faster HMR, requires local node)
+	docker compose --profile dev up -d backend chroma ollama
 	cd frontend && npm run dev &
 	source .venv/bin/activate && uvicorn backend.main:app --reload --port 8000
+
+dev-down:  ## Stop the dev stack
+	docker compose --profile dev down
 
 test:  ## Run test suite
 	docker compose --profile test up -d
@@ -29,8 +42,8 @@ fmt:  ## Format code
 	ruff format backend/
 	cd frontend && npm run format
 
-logs:  ## Tail backend logs
-	docker compose logs -f backend
+logs:  ## Tail backend + frontend logs
+	docker compose logs -f backend frontend_dev
 
 docker-up:  ## Start all Docker containers
 	docker compose up -d
