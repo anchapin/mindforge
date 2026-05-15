@@ -21,7 +21,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any
 
-from ..agents.routing import classify_task_type
+from ..agents.routing import TASK_TYPE_RULES
 from .episodic import EpisodicMemory, EpisodicMemoryStore
 from .semantic import SemanticMemory
 from .style import WritingProfileStore
@@ -159,7 +159,12 @@ class SharedMemoryStore:
             memory_types = ["semantic", "episodic", "style"]
 
         results: list[MemoryResult] = []
-        task_type = classify_task_type(query)
+        task_type = "general"
+        query_lower = query.lower()
+        for rule_type, keywords in TASK_TYPE_RULES:
+            if any(kw in query_lower for kw in keywords):
+                task_type = rule_type
+                break
 
         # Semantic layer — hybrid vector + BM25 retrieval
         if "semantic" in memory_types:
