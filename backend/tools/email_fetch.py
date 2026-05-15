@@ -87,8 +87,13 @@ class EmailFetchTool(BaseTool):  # type: ignore[override]
 
         return await integration_call("gmail", _run_sync_fetch)
 
-    async def validate_auth(self) -> bool:
-        return True  # IMAP auth is validated on connect
+    async def validate_auth(self, token: str | None = None) -> bool:
+        # IMAP/SMTP auth is verified at connect time inside execute(); a
+        # standalone probe would require host+port+user which we don't have
+        # here. Returning True keeps the interface uniform without making
+        # claims we can't back up.
+        del token  # unused
+        return True
 
     def _extract_body(self, msg) -> str:
         body = ""

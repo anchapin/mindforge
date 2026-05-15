@@ -198,15 +198,25 @@ class GitHubTool(BaseTool):  # type: ignore[override]
             "date": c["commit"]["author"]["date"],
         }
 
-    async def validate_auth(self) -> bool:
+    async def validate_auth(self, token: str | None = None) -> bool:
+        """Probe the user's real GitHub PAT against /user.
+
+        Pre-fix: this sent `Authorization: Bearer ` (empty token), which
+        always failed; it then returned `resp.status_code == 200` — so the
+        result was permanently False regardless of whether the user had
+        configured a valid token.
+        """
+        if not token:
+            return False
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
                 resp = await integration_call(
                     "github",
                     client.get,
                     "https://api.github.com/user",
-                    headers={"Authorization": f"Bearer {''}"},
+                    headers={"Authorization": f"Bearer {token}"},
                 )
                 return resp.status_code == 200
-            except Exception:
+            except Exception as exc:
+                logger.warning("GitHub validate_auth failed: %s", exc)
                 return False

@@ -85,7 +85,7 @@ def client() -> Iterator[TestClient]:
     app.include_router(integrations.router)
 
     def _override_db_dep() -> Iterator[sqlite3.Connection]:
-        conn = sqlite3.connect(tmp.name)
+        conn = sqlite3.connect(tmp.name, check_same_thread=False)
         conn.row_factory = sqlite3.Row
         try:
             yield conn
@@ -94,8 +94,17 @@ def client() -> Iterator[TestClient]:
 
     app.dependency_overrides[db_dep] = _override_db_dep
 
-    with TestClient(app) as c:
-        yield c
+    # Register tools so /test can find them via ToolRegistry. Use module-level
+    # auto-registration so we don't have to maintain a list here.
+    from backend.tools.registry import ToolRegistry, register_all_tools
+
+    register_all_tools()
+
+    try:
+        with TestClient(app) as c:
+            yield c
+    finally:
+        ToolRegistry._tools.clear()
 
     os.unlink(tmp.name)
 
@@ -136,19 +145,20 @@ class TestRouteWiring:
 
 class TestCRUDRoundTrip:
     def test_full_lifecycle(self, client: TestClient) -> None:
-        # CREATE
+        # CREATE — use an app_name with no live probe so this stays a pure
+        # CRUD round-trip (probe behavior is covered separately below).
         create = client.post(
             "/api/integrations/",
             json={
-                "app_name": "stripe",
-                "token": "sk_test_abc",
+                "app_name": "notion",
+                "token": "secret_abc",
                 "permissions": ["read"],
                 "allowed_agents": ["coo", "cmo"],
             },
         )
         assert create.status_code == 201, create.text
         body = create.json()
-        assert body["app_name"] == "stripe"
+        assert body["app_name"] == "notion"
         assert body["status"] == "active"
         assert body["permissions"] == ["read"]
         assert body["allowed_agents"] == ["coo", "cmo"]
@@ -164,10 +174,13 @@ class TestCRUDRoundTrip:
         assert len(all_rows) == 1
         assert all_rows[0]["id"] == integration_id
 
-        # TEST (probe)
+        # TEST (probe) — notion has no probe wired -> success=True, probed=False
         probe = client.post(f"/api/integrations/{integration_id}/test")
         assert probe.status_code == 200
-        assert probe.json()["success"] is True
+        probe_body = probe.json()
+        assert probe_body["success"] is True
+        assert probe_body["probed"] is False
+        assert "no live probe configured" in probe_body["message"]
 
         # DELETE
         delete = client.delete(f"/api/integrations/{integration_id}")
@@ -235,3 +248,60 @@ class TestTokenHandling:
         listed = client.get("/api/integrations/").json()
         assert listed[0]["app_name"] == "github"
         assert "ghp_super_secret_value" not in str(listed)
+
+
+class TestLiveProbe:
+    """The /test endpoint must call the matching tool's validate_auth (#44)."""
+
+    def test_stripe_probe_invokes_validate_auth_with_decrypted_token(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        """When app_name=stripe is registered, /test calls
+        StripeTool.validate_auth(token=<decrypted>) and reports the result."""
+        captured: dict = {}
+
+        async def fake_validate_auth(self, token: str | None = None) -> bool:
+            captured["token"] = token
+            return True
+
+        from backend.tools.stripe import StripeTool
+
+        monkeypatch.setattr(StripeTool, "validate_auth", fake_validate_auth)
+
+        create = client.post(
+            "/api/integrations/",
+            json={"app_name": "stripe", "token": "sk_live_REAL"},
+        )
+        assert create.status_code == 201
+        integration_id = create.json()["id"]
+
+        probe = client.post(f"/api/integrations/{integration_id}/test")
+        assert probe.status_code == 200
+        body = probe.json()
+        assert body["success"] is True
+        assert body["probed"] is True
+        # The decrypted token reached validate_auth — not the placeholder
+        assert captured["token"] == "sk_live_REAL"
+
+    def test_stripe_probe_reports_failure_when_validate_auth_returns_false(
+        self, client: TestClient, monkeypatch
+    ) -> None:
+        async def fake_validate_auth(self, token=None):
+            return False
+
+        from backend.tools.stripe import StripeTool
+
+        monkeypatch.setattr(StripeTool, "validate_auth", fake_validate_auth)
+
+        create = client.post(
+            "/api/integrations/",
+            json={"app_name": "stripe", "token": "sk_live_BAD"},
+        )
+        integration_id = create.json()["id"]
+
+        probe = client.post(f"/api/integrations/{integration_id}/test")
+        body = probe.json()
+        assert body["success"] is False
+        assert body["probed"] is True
+        assert "rejected" in body["message"].lower()
+

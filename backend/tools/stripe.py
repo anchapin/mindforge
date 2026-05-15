@@ -104,15 +104,27 @@ class StripeTool(BaseTool):  # type: ignore[override]
                     success=False, error=str(exc), latency_ms=(time.monotonic() - start) * 1000
                 )
 
-    async def validate_auth(self) -> bool:
+    async def validate_auth(self, token: str | None = None) -> bool:
+        """Probe the user's real Stripe key against /v1/balance.
+
+        Returns:
+            True   -> 200 (token is valid)
+            False  -> 401 (auth rejected) OR no token supplied OR network error
+
+        Pre-fix: this used a literal "sk_test_placeholder" string and accepted
+        both 200 and 401 as success, so it could never report bad credentials.
+        """
+        if not token:
+            return False
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
                 resp = await integration_call(
                     "stripe",
                     client.get,
                     "https://api.stripe.com/v1/balance",
-                    headers={"Authorization": "Bearer sk_test_placeholder"},
+                    headers={"Authorization": f"Bearer {token}"},
                 )
-                return resp.status_code in (200, 401)
-            except Exception:
+                return resp.status_code == 200
+            except Exception as exc:
+                logger.warning("Stripe validate_auth failed: %s", exc)
                 return False

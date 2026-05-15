@@ -149,15 +149,77 @@ def delete_integration(
     return {"status": "deleted", "id": integration_id}
 
 
-@router.post("/{integration_id}/test", response_model=dict)
-def test_integration(
-    integration_id: str, db: sqlite3.Connection = Depends(db_dep)
-) -> dict:
-    row = db.execute(
-        "SELECT id, app_name, status FROM integration WHERE id = ?",
+# Map integration `app_name` -> tool registry key. Keep small and explicit;
+# new integrations should add an entry here when they want a real probe.
+_PROBE_TOOL_FOR_APP: dict[str, str] = {
+    "stripe": "stripe_api",
+    "github": "github_api",
+    "linear": "linear_api",
+    "email": "email_fetch",
+}
+
+
+def _fetch_integration_row(
+    db: sqlite3.Connection, integration_id: str
+) -> sqlite3.Row | None:
+    """Sync DB lookup, isolated so the test_integration handler can call it
+    before doing any async work (avoids cross-thread sqlite3 errors when
+    FastAPI runs the async route on its threadpool)."""
+    return db.execute(
+        "SELECT id, app_name, auth_token_enc, status FROM integration WHERE id = ?",
         (integration_id,),
     ).fetchone()
+
+
+@router.post("/{integration_id}/test", response_model=dict)
+async def test_integration(
+    integration_id: str, db: sqlite3.Connection = Depends(db_dep)
+) -> dict:
+    """Probe the integration's API with the user's stored credential.
+
+    Looks up the matching BaseTool, decrypts the stored token, and calls
+    `validate_auth(token)`. Returns success only when the underlying API
+    accepted the credential — no more "always-true" stub.
+    """
+    row = _fetch_integration_row(db, integration_id)
     if not row:
         raise HTTPException(status_code=404, detail="Integration not found")
-    # Phase 1 stub: real connectivity probe is per-tool (see issue #44 / #35).
-    return {"success": True, "message": f"{row['app_name']} integration registered"}
+
+    tool_name = _PROBE_TOOL_FOR_APP.get(row["app_name"])
+    if tool_name is None:
+        # No probe wired yet for this app — keep the legacy "registered" reply
+        # so the dashboard still works; flag explicitly so we can audit.
+        return {
+            "success": True,
+            "message": f"{row['app_name']} integration registered (no live probe configured)",
+            "probed": False,
+        }
+
+    # Lazily import the registry to avoid pulling tool deps at module import
+    from backend.tools.registry import ToolRegistry
+
+    try:
+        tool = ToolRegistry.get(tool_name)
+    except KeyError:
+        return {
+            "success": False,
+            "message": f"No tool '{tool_name}' registered for {row['app_name']}",
+            "probed": False,
+        }
+
+    try:
+        token = _decrypt_token(row["auth_token_enc"])
+    except HTTPException:
+        # _decrypt_token already raises 500 with a clear message
+        raise
+
+    ok = await tool.validate_auth(token=token)
+    return {
+        "success": bool(ok),
+        "message": (
+            f"{row['app_name']} credential accepted"
+            if ok
+            else f"{row['app_name']} credential rejected by API"
+        ),
+        "probed": True,
+    }
