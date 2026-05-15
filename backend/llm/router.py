@@ -340,7 +340,7 @@ class LLMRouter:
             response = ollama.generate(
                 model=cfg.model,
                 prompt=prompt,
-                system=system if system else None,
+                system=system or "",
                 options={
                     "num_predict": cfg.max_tokens,
                     "temperature": cfg.temperature,
