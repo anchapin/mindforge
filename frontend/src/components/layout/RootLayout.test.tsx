@@ -26,15 +26,18 @@ import { Suspense } from "react";
 import { RootLayout } from "./RootLayout";
 import { useNotificationStore } from "../../stores/notificationStore";
 
-// Module-level state for the mocked preferences fetch (#46). Tests that
-// want first-run behavior set this to { id: "" } in their `beforeEach`.
-// Tests that want to suppress the onboarding modal leave it at the default.
-let nextPreferencesResponse: { id: string } = { id: "post-onboarding-uuid" };
+// Module-level state for the mocked preferences fetch (#46/#72). Tests that
+// want first-run behavior set onboarding_completed=false; tests that want to
+// suppress the onboarding modal leave the default (true).
+let nextPreferencesResponse: {
+  id: string;
+  onboarding_completed: boolean;
+} = { id: "post-onboarding-uuid", onboarding_completed: true };
 
 vi.mock("../../lib/api", () => ({
   // #47 — clarification submitter
   submitClarification: vi.fn().mockResolvedValue(undefined),
-  // #46 — first-run gate signal
+  // #46/#72 — first-run gate signal (now keys off onboarding_completed)
   fetchPreferences: vi.fn(async () => ({
     id: nextPreferencesResponse.id,
     proactive_monitoring_enabled: true,
@@ -43,9 +46,13 @@ vi.mock("../../lib/api", () => ({
     billing_alert_threshold_usd: 50,
     notification_channel: "dashboard",
     notification_handle: null,
+    onboarding_completed: nextPreferencesResponse.onboarding_completed,
     created_at: "2026-05-15T00:00:00Z",
     updated_at: "2026-05-15T00:00:00Z",
   })),
+  // #72 — wizard now POSTs on Complete / Skip; mocks return resolved
+  submitOnboarding: vi.fn().mockResolvedValue(undefined),
+  submitOnboardingSkip: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Avoid the real WS singleton trying to connect (WSMessageHandler subscribes)
@@ -100,7 +107,7 @@ describe("RootLayout: notifications", () => {
   beforeEach(() => {
     useNotificationStore.getState().clearAll();
     // Suppress the first-run gate in notification tests
-    nextPreferencesResponse = { id: "post-onboarding-uuid" };
+    nextPreferencesResponse = { id: "post-onboarding-uuid", onboarding_completed: true };
     localStorage.clear();
   });
 
@@ -140,7 +147,7 @@ describe("RootLayout: notifications", () => {
 describe("RootLayout: clarification modal", () => {
   beforeEach(() => {
     useNotificationStore.getState().clearAll();
-    nextPreferencesResponse = { id: "post-onboarding-uuid" };
+    nextPreferencesResponse = { id: "post-onboarding-uuid", onboarding_completed: true };
     localStorage.clear();
   });
 
@@ -216,7 +223,7 @@ describe("RootLayout: onboarding gate", () => {
     useNotificationStore.getState().clearAll();
     localStorage.clear();
     // First-run signal for these tests
-    nextPreferencesResponse = { id: "" };
+    nextPreferencesResponse = { id: "singleton-uuid", onboarding_completed: false };
   });
 
   it("renders the wizard when preferences id is empty (first run)", async () => {
@@ -229,7 +236,7 @@ describe("RootLayout: onboarding gate", () => {
   });
 
   it("does NOT render the wizard when preferences id is a real value", async () => {
-    nextPreferencesResponse = { id: "real-uuid-here" };
+    nextPreferencesResponse = { id: "real-uuid-here", onboarding_completed: true };
     renderRoot();
     await waitFor(() => {
       expect(screen.queryByText(/MindForge/)).toBeInTheDocument();

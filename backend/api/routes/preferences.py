@@ -33,6 +33,12 @@ def get_preferences(db) -> dict:
     row = db.execute("SELECT * FROM user_preference LIMIT 1").fetchone()
 
     if row:
+        # row may not have the onboarding_completed column on installs that
+        # haven't run the post-#72 migration yet; default to False if absent.
+        try:
+            onboarding_completed = bool(row["onboarding_completed"])
+        except (IndexError, KeyError):
+            onboarding_completed = False
         return {
             "id": row["id"],
             "proactive_monitoring_enabled": bool(row["proactive_monitoring_enabled"]),
@@ -41,6 +47,7 @@ def get_preferences(db) -> dict:
             "billing_alert_threshold_usd": row["billing_alert_threshold_usd"],
             "notification_channel": row["notification_channel"],
             "notification_handle": row["notification_handle"],
+            "onboarding_completed": onboarding_completed,
             "created_at": row["created_at"],
             "updated_at": row["updated_at"],
         }
@@ -54,6 +61,7 @@ def get_preferences(db) -> dict:
         "billing_alert_threshold_usd": 50,
         "notification_channel": "dashboard",
         "notification_handle": None,
+        "onboarding_completed": False,
         "created_at": datetime.utcnow().isoformat(),
         "updated_at": datetime.utcnow().isoformat(),
     }

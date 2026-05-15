@@ -91,7 +91,7 @@ def complete_onboarding(payload: OnboardingPayload, db) -> dict:
     # --- Integrations: upsert by app_name ---
     for integ in payload.integrations:
         existing = db.execute(
-            "SELECT id FROM integrations WHERE app_name = ?", (integ.app_name,)
+            "SELECT id FROM integration WHERE app_name = ?", (integ.app_name,)
         ).fetchone()
 
         encrypted = _encrypt_token(integ.token)
@@ -100,7 +100,7 @@ def complete_onboarding(payload: OnboardingPayload, db) -> dict:
 
         if existing:
             db.execute(
-                "UPDATE integrations SET "
+                "UPDATE integration SET "
                 "auth_token_enc = ?, permissions = ?, allowed_agents = ?, "
                 "updated_at = ? "
                 "WHERE app_name = ?",
@@ -109,18 +109,45 @@ def complete_onboarding(payload: OnboardingPayload, db) -> dict:
         else:
             integ_id = str(uuid.uuid4())
             db.execute(
-                "INSERT INTO integrations "
+                "INSERT INTO integration "
                 "(id, app_name, auth_token_enc, permissions, allowed_agents, "
                 "status, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, 'active', ?, ?)",
                 (integ_id, integ.app_name, encrypted, permissions, allowed_agents, now, now),
             )
 
+    # Mark the singleton as onboarded (#72). This is the signal the frontend
+    # first-run gate keys off — without it, real users (whose singleton row
+    # was created at first migration) would never be prompted.
+    db.execute(
+        "UPDATE user_preference SET onboarding_completed = 1, updated_at = ?",
+        (now,),
+    )
+
     db.commit()
-    return {"status": "created"}
+    return {"status": "created", "onboarding_completed": True}
+
+
+def skip_onboarding(db) -> dict:
+    """POST /api/onboarding/skip — mark onboarding complete without writing
+    any profile/integration data. The user explicitly chose to skip;
+    we don't want to keep prompting them."""
+    now = datetime.utcnow().isoformat()
+    db.execute(
+        "UPDATE user_preference SET onboarding_completed = 1, updated_at = ?",
+        (now,),
+    )
+    db.commit()
+    return {"status": "skipped", "onboarding_completed": True}
 
 
 @router.post("/", response_model=dict)
 async def post_onboarding(payload: OnboardingPayload, db=Depends(db_dep)) -> dict:
     """POST /api/onboarding — complete onboarding wizard."""
     return complete_onboarding(payload, db)
+
+
+@router.post("/skip", response_model=dict)
+async def post_onboarding_skip(db=Depends(db_dep)) -> dict:
+    """POST /api/onboarding/skip — dismiss onboarding without saving data."""
+    return skip_onboarding(db)

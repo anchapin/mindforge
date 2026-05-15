@@ -41,6 +41,7 @@ def _init_test_db():
             billing_alert_threshold_usd INTEGER NOT NULL DEFAULT 50,
             notification_channel TEXT NOT NULL DEFAULT 'dashboard',
             notification_handle TEXT,
+            onboarding_completed INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
@@ -58,7 +59,7 @@ def _init_test_db():
         )
     """)
     conn.execute("""
-        CREATE TABLE IF NOT EXISTS integrations (
+        CREATE TABLE IF NOT EXISTS integration (
             id TEXT PRIMARY KEY DEFAULT (lower(hex(randomblob(16)))),
             app_name TEXT NOT NULL UNIQUE,
             auth_token_enc TEXT NOT NULL,
@@ -306,7 +307,7 @@ class TestOnboarding:
 
         # Verify integration was stored
         row = test_conn.execute(
-            "SELECT app_name, auth_token_enc, permissions FROM integrations"
+            "SELECT app_name, auth_token_enc, permissions FROM integration"
         ).fetchone()
         assert row["app_name"] == "github"
         # Permissions stored as JSON string via json.dumps()
@@ -325,14 +326,14 @@ class TestOnboarding:
 
         # Clean up any pre-existing github row from prior tests in the suite
         conn = sqlite3.connect(_test_db_path)
-        conn.execute("DELETE FROM integrations WHERE app_name = 'github'")
+        conn.execute("DELETE FROM integration WHERE app_name = 'github'")
         conn.commit()
         conn.close()
 
         # Pre-existing integration — committed so complete_onboarding can see it
         conn = sqlite3.connect(_test_db_path)
         conn.execute(
-            "INSERT INTO integrations (id, app_name, auth_token_enc, permissions, allowed_agents, status, created_at, updated_at) "
+            "INSERT INTO integration (id, app_name, auth_token_enc, permissions, allowed_agents, status, created_at, updated_at) "
             "VALUES (lower(hex(randomblob(16))), 'github', 'old_token', '[]', '[]', 'active', datetime('now'), datetime('now'))"
         )
         conn.commit()
@@ -371,7 +372,7 @@ class TestOnboarding:
         assert result["status"] == "created"
 
         # github integration should be updated, not duplicated
-        rows = test_conn.execute("SELECT app_name FROM integrations").fetchall()
+        rows = test_conn.execute("SELECT app_name FROM integration").fetchall()
         github_count = sum(1 for r in rows if r["app_name"] == "github")
         assert github_count == 1, f"Expected 1 github integration, got {github_count}"
 

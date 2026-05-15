@@ -7,7 +7,7 @@
 
 import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { NotificationBell } from "../NotificationBell";
 import { ClarificationModal } from "../ClarificationModal";
 import { OnboardingWizard } from "../OnboardingWizard";
@@ -47,18 +47,22 @@ export function RootLayout({ children }: { children: ReactNode }) {
     retry: 0,
   });
 
+  const queryClient = useQueryClient();
   const [dismissedThisSession, setDismissedThisSession] = useState(false);
 
   const showOnboarding =
     !dismissedThisSession &&
     shouldShowOnboarding({
-      preferencesId: prefs?.id,
+      preferencesOnboardingCompleted: prefs?.onboarding_completed,
       preferencesLoading: prefsLoading,
     });
 
   const handleOnboardingDismiss = () => {
     markOnboardingDismissed();        // persist for future page loads
     setDismissedThisSession(true);    // hide immediately, this render
+    // Refresh prefs so onboarding_completed (just set by the wizard's POST)
+    // is reflected in any other component that reads it.
+    queryClient.invalidateQueries({ queryKey: ["preferences"] });
   };
 
   // Notification + clarification wiring (#47).
