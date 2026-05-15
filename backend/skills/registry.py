@@ -29,46 +29,11 @@ class SkillRegistry:
     """In-memory registry of loaded, validated skills.
 
     Loads all .yaml files from the skills directory on startup.
-    Validates at invocation time with caching: only re-validates if the YAML
-    file's content (mtime + size) has changed since last validation (#105).
     """
 
     def __init__(self, skills_dir: Path | None = None) -> None:
         self._skills_dir = skills_dir or SKILLS_DIR
         self._skills: dict[str, Skill] = {}
-        # Cache: skill_id -> (mtime, size, errors)
-        self._validation_cache: dict[str, tuple[float, int, list[str] | None]] = {}
-
-    def _file_fingerprint(self, path: Path) -> tuple[float, int]:
-        """Return (mtime, size) for cache-busting — lightweight alternative to hashing."""
-        try:
-            st = path.stat()
-            return (st.st_mtime, st.st_size)
-        except OSError:
-            return (0, 0)
-
-    def _needs_validation(self, skill_id: str, path: Path) -> bool:
-        """Return True if the file changed since last cached validation."""
-        try:
-            mtime, size = self._file_fingerprint(path)
-            cached = self._validation_cache.get(skill_id)
-            if cached is None:
-                return True
-            return cached[0] != mtime or cached[1] != size
-        except Exception:
-            return True
-
-    def _get_cached_errors(self, skill_id: str) -> list[str] | None:
-        """Return cached validation errors, or None if cache is stale."""
-        return self._validation_cache.get(skill_id, (0, 0, None))[2]
-
-    def _set_cached_validation(self, skill_id: str, path: Path, errors: list[str] | None) -> None:
-        """Store validation result alongside file fingerprint."""
-        try:
-            mtime, size = self._file_fingerprint(path)
-            self._validation_cache[skill_id] = (mtime, size, errors)
-        except Exception:
-            pass
 
     def load_all(self) -> None:
         """Scan skills_dir and load every .yaml file."""
@@ -82,51 +47,14 @@ class SkillRegistry:
             except Exception as exc:  # pragma: no cover
                 logger.error("failed to load skill %s: %s", path.name, exc)
 
-    def _load_raw(self, path: Path) -> dict:
-        """Load raw YAML content from a skill file.
-
-        Raises ValueError if the file is empty or unreadable.
-        """
-        try:
-            raw = yaml.safe_load(path.read_text())
-        except Exception as exc:
-            raise ValueError(f"failed to parse skill file {path.name}: {exc}") from exc
-        if not raw:
-            raise ValueError(f"empty skill file: {path.name}")
-        return raw
-
-    def validate_for_execution(self, skill_id: str) -> list[str]:
-        """Lightweight invocation-time validation (cached).
-
-        Only validates if the YAML file's content changed since last check.
-        Returns a list of errors (empty = valid).
-        """
-        skill = self._skills.get(skill_id)
-        if not skill:
-            return [f"Skill '{skill_id}' not found in registry"]
-
-        # Re-derive the expected path from skill id
-        skill_yaml_path = self._skills_dir / f"{skill_id}.yaml"
-        if not skill_yaml_path.exists():
-            # Skill is loaded but YAML gone — treat as invalid rather than crashing
-            return [f"Skill file for '{skill_id}' no longer exists on disk"]
-
-        if not self._needs_validation(skill_id, skill_yaml_path):
-            cached = self._get_cached_errors(skill_id)
-            return cached if cached is not None else []
-
-        # Validate and cache result
-        raw = self._load_raw(skill_yaml_path)
-        errors = validate_skill_graph(raw)
-        self._set_cached_validation(skill_id, skill_yaml_path, errors if errors else None)
-        return errors
-
     def load_skill_file(self, path: Path) -> Skill | None:
         """Load and validate a single skill YAML file.
 
         Raises ValueError if the skill is invalid.
         """
-        raw = self._load_raw(path)
+        raw = yaml.safe_load(path.read_text())
+        if not raw:
+            raise ValueError(f"empty skill file: {path.name}")
 
         errors = validate_skill_graph(raw)
         if errors:
@@ -135,7 +63,6 @@ class SkillRegistry:
         skill = self._parse_skill(raw, yaml_content=path.read_text())
         skill.execution_graph = self._parse_graph(raw.get("execution_graph", {}))
         self._skills[skill.id] = skill
-        self._set_cached_validation(skill.id, path, None)
         logger.info("loaded skill: %s v%d", skill.id, skill.version)
         return skill
 
@@ -256,18 +183,12 @@ class SkillRegistry:
         if skill:
             skill.success_count += 1
             skill.last_run_at = datetime.utcnow()
-            self._invalidate_cache(skill_id)
 
     def increment_failure(self, skill_id: str) -> None:
         skill = self._skills.get(skill_id)
         if skill:
             skill.failure_count += 1
             skill.last_run_at = datetime.utcnow()
-            self._invalidate_cache(skill_id)
-
-    def _invalidate_cache(self, skill_id: str) -> None:
-        """Clear the validation cache when a skill is updated."""
-        self._validation_cache.pop(skill_id, None)
 
 
 # Module-level singleton — populated on first import
