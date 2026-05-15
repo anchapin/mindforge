@@ -1,0 +1,4 @@
+{"ts": "2026-05-15T00:00:00Z", "kind": "harness_start", "run_id": "test-run-4"}
+{"ts": "2026-05-15T00:00:10Z", "kind": "skill_trigger", "skill": "subscription-refund", "task_id": "t1", "ok": true, "status_code": 201}
+{"ts": "2026-05-15T00:00:15Z", "kind": "skill_trigger", "skill": "subscription-refund", "task_id": "t2", "ok": true, "status_code": 201}
+{"ts": "2026-05-15T00:00:55Z", "kind": "harness_stop", "run_id": "test-run-4", "duration_seconds": 55}
