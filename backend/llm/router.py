@@ -243,6 +243,7 @@ class LLMRouter:
         import time as _time
 
         _start = _time.monotonic()
+        result: str | AsyncGenerator[str, None]
 
         try:
             if cfg.tier == InferenceTier.LOCAL:
