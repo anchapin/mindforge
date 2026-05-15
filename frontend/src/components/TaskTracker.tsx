@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { listTasks } from "../lib/api";
 import { useTaskStore } from "../stores/taskStore";
 import { TaskCard } from "./TaskCard";
+import { SystemActivity } from "./SystemActivity";
 
 export function TaskTracker() {
   const { data: tasks = [], isLoading } = useQuery({
@@ -63,6 +64,9 @@ export function TaskTracker() {
           No tasks yet. Try: &quot;Summarize my GitHub commits from the last 24 hours&quot;
         </p>
       )}
+
+      {/* System Activity — proactive events per SPEC.md §2.7.4 */}
+      <SystemActivity />
     </div>
   );
 }
