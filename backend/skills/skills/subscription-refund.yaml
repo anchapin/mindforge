@@ -57,7 +57,7 @@ execution_graph:
         Send the drafted email via the email integration.
         Log the outcome to episodic memory.
       tools:
-        - stripe_refund_api
+        - stripe_api  # action=refund (high-stakes; requires_approval gates this node)
         - email_send
       requires_approval: true
       approval_timeout_minutes: 2880
