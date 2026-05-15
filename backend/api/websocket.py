@@ -2,17 +2,6 @@
 
 From SPEC.md Section 2.5 -- WebSocket message protocol.
 All outgoing messages pass through scrub() to redact sensitive fields.
-
-Issue #106 — sequence numbers for reliable reconnect:
-  - Every broadcast/send carries an incrementing "seq" field.
-  - Per-connection state tracks "last_sent_seq" per WebSocket.
-  - On connect, clients may send {"type":"subscribe","last_sequence":N}
-    to request replay from seq N+1.
-  - Server maintains a small replay buffer (last 100 messages by default).
-
-Issue #109 — correlation IDs for observability:
-  - Every outbound message carries a "correlation_id" (UUID4).
-  - Correlation IDs appear in server logs for tracing WS operations.
 """
 
 from __future__ import annotations
@@ -20,9 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import uuid
-from collections import deque
-from typing import Any
 
 from fastapi import WebSocket
 
@@ -64,41 +50,6 @@ def _scrub(obj: dict | list) -> dict | list:
 
 
 # ---------------------------------------------------------------------------------------
-# Replay buffer
-# ---------------------------------------------------------------------------------------
-
-DEFAULT_REPLAY_BUFFER_SIZE = 100
-
-
-class _ReplayBuffer:
-    """Circular buffer of the last N outbound messages for reconnect replay."""
-
-    def __init__(self, maxsize: int = DEFAULT_REPLAY_BUFFER_SIZE) -> None:
-        self.maxsize = maxsize
-        self._buf: deque[dict[str, Any]] = deque(maxlen=maxsize)
-
-    def append(self, msg: dict[str, Any]) -> None:
-        self._buf.append(msg)
-
-    def after(self, seq: int) -> list[dict[str, Any]]:
-        """Return messages with seq > seq (i.e., from seq+1 onward)."""
-        return [m for m in self._buf if m.get("seq", 0) > seq]
-
-
-# ---------------------------------------------------------------------------------------
-# Per-connection state
-# ---------------------------------------------------------------------------------------
-
-
-class _ConnectionState:
-    """Lightweight state tracked per WebSocket connection."""
-
-    def __init__(self, websocket: WebSocket) -> None:
-        self.websocket = websocket
-        self.last_sequence = 0
-
-
-# ---------------------------------------------------------------------------------------
 # Connection manager
 # ---------------------------------------------------------------------------------------
 
@@ -108,52 +59,20 @@ class WSConnectionManager:
 
     All agent events are broadcast through this manager.
     All outgoing messages are scrubbed of sensitive fields.
-
-    Issue #106: every send/broadcast carries a globally incrementing
-    sequence number so clients can request replay on reconnect.
-    Issue #109: every message carries a correlation_id for observability.
     """
 
     def __init__(self):
-        self._connections: dict[str, WebSocket] = {}  # type: ignore[assignment]
-        self._global_connections: list[WebSocket] = []  # type: ignore[assignment]
-        # Per-connection state (parallel arrays for lock-free access where possible)
-        self._conn_states: dict[WebSocket, _ConnectionState] = {}
-        self._global_states: list[_ConnectionState] = []
+        self._connections: dict[str, WebSocket] = {}  # type: ignore[assignment,annotation-unchecked]
+        self._global_connections: list[WebSocket] = []  # type: ignore[assignment,annotation-unchecked]
         self._lock = asyncio.Lock()
-        self._seq = 0
-        self._replay = _ReplayBuffer()
-
-    # -----------------------------------------------------------------
-    # Sequence helpers
-    # -----------------------------------------------------------------
-
-    def _next_seq(self) -> int:
-        self._seq += 1
-        return self._seq
-
-    def _stamp(self, msg: dict[str, Any]) -> dict[str, Any]:
-        """Add seq + correlation_id to an outbound message."""
-        msg = dict(msg)
-        msg["seq"] = self._next_seq()
-        msg["correlation_id"] = str(uuid.uuid4())
-        self._replay.append(msg)
-        return msg
-
-    # -----------------------------------------------------------------
-    # Connection lifecycle
-    # -----------------------------------------------------------------
 
     async def connect(self, websocket: WebSocket, task_id: str | None = None) -> None:
         await websocket.accept()
         async with self._lock:
-            state = _ConnectionState(websocket)
             if task_id:
                 self._connections[task_id] = websocket
             else:
                 self._global_connections.append(websocket)
-                self._global_states.append(state)
-            self._conn_states[websocket] = state
         try:
             from backend.observability.metrics import inc_ws_connection
 
@@ -168,12 +87,8 @@ class WSConnectionManager:
                 del self._connections[task_id]
                 removed = True
             elif websocket in self._global_connections:
-                idx = self._global_connections.index(websocket)
-                self._global_connections.pop(idx)
-                if idx < len(self._global_states):
-                    self._global_states.pop(idx)
+                self._global_connections.remove(websocket)
                 removed = True
-            self._conn_states.pop(websocket, None)
         if removed:
             try:
                 from backend.observability.metrics import dec_ws_connection
@@ -182,91 +97,31 @@ class WSConnectionManager:
             except Exception:
                 pass
 
-    # -----------------------------------------------------------------
-    # Inbound message handling (client → server)
-    # -----------------------------------------------------------------
-
-    async def handle_message(self, websocket: WebSocket, task_id: str | None, data: dict[str, Any]) -> None:
-        """Process inbound client messages.
-
-        Supported:
-          - {"type":"subscribe","last_sequence":N}
-              Request replay of all messages after sequence N.
-              Sent automatically by the frontend on reconnect.
-        """
-        msg_type = data.get("type")
-        if msg_type == "subscribe":
-            last_seq = int(data.get("last_sequence", 0))
-            async with self._lock:
-                state = self._conn_states.get(websocket)
-                if state:
-                    state.last_sequence = last_seq
-            # Replay missed messages to this connection
-            missed = self._replay.after(last_seq)
-            logger.info(
-                "[WS] client replay request last_seq=%d => %d messages (corr_id=%s)",
-                last_seq,
-                len(missed),
-                data.get("correlation_id", "?"),
-            )
-            for msg in missed:
-                try:
-                    await websocket.send_text(json.dumps(msg))
-                except Exception as exc:
-                    logger.warning("replay send failed: %s", exc)
-        elif msg_type == "ping":
-            # Client-side heartbeat echo
-            await websocket.send_text(json.dumps({"type": "pong", "correlation_id": data.get("correlation_id", "")}))
-
-    # -----------------------------------------------------------------
-    # Outbound sending
-    # -----------------------------------------------------------------
-
     async def send(self, task_id: str, message: dict) -> None:
         message = _scrub(message)  # type: ignore[assignment]
-        stamped = self._stamp(message)  # adds seq + correlation_id
-        corr_id = stamped.get("correlation_id", "?")
-        payload = json.dumps(stamped)
+        payload = json.dumps(message)
         async with self._lock:
             ws: WebSocket | None = self._connections.get(task_id)  # type: ignore[assignment,annotation-unchecked]
-            if ws:
-                state = self._conn_states.get(ws)
-                if state:
-                    state.last_sequence = stamped["seq"]
         if ws:
             try:
                 await ws.send_text(payload)
             except Exception as exc:
-                logger.warning("WS send failed to task %s: %s [corr_id=%s]", task_id, exc, corr_id)
+                logger.warning("WS send failed to task %s: %s", task_id, exc)
                 await self.disconnect(ws, task_id)
 
     async def broadcast(self, message: dict) -> None:
         message = _scrub(message)  # type: ignore[assignment]
-        stamped = self._stamp(message)
-        corr_id = stamped.get("correlation_id", "?")
-        payload = json.dumps(stamped)
+        payload = json.dumps(message)
         async with self._lock:
             listeners: list[WebSocket] = list(self._global_connections)  # type: ignore[assignment,annotation-unchecked]
-            for ws in listeners:
-                state = self._conn_states.get(ws)
-                if state:
-                    state.last_sequence = stamped["seq"]
         for ws in listeners:
             try:
                 await ws.send_text(payload)
             except Exception as exc:
-                logger.warning("WS broadcast failed: %s [corr_id=%s]", exc, corr_id)
+                logger.warning("WS broadcast failed: %s", exc)
                 async with self._lock:
                     if ws in self._global_connections:
-                        idx = self._global_connections.index(ws)
-                        self._global_connections.pop(idx)
-                        if idx < len(self._global_states):
-                            self._global_states.pop(idx)
-                        self._conn_states.pop(ws, None)
-
-    # -----------------------------------------------------------------
-    # Public send helpers (mirrors original API, adds seq + correlation_id)
-    # -----------------------------------------------------------------
+                        self._global_connections.remove(ws)
 
     async def send_task_created(self, task_id: str, skill_name: str | None) -> None:
         await self.broadcast({"type": "task_created", "task_id": task_id, "skill_name": skill_name})
