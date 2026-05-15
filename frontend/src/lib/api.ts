@@ -199,3 +199,46 @@ export async function submitOnboardingSkip(): Promise<void> {
   const res = await fetch(`${API_BASE}/api/onboarding/skip`, { method: "POST" });
   if (!res.ok) throw new Error(`Onboarding skip failed: ${res.statusText}`);
 }
+
+// ---------------------------------------------------------------------------
+// Skill editor (#49)
+// ---------------------------------------------------------------------------
+
+export interface SkillNode {
+  id: string;
+  agent?: string;
+  goal?: string;
+  requires_approval?: boolean;
+  [key: string]: unknown;
+}
+
+export interface SkillEdge {
+  from: string;
+  to: string;
+  condition?: string;
+}
+
+export interface SkillGraphPreview {
+  nodes: SkillNode[];
+  edges: SkillEdge[];
+}
+
+export interface SkillValidationResult {
+  valid: boolean;
+  errors: string[];
+  graph: SkillGraphPreview | null;
+}
+
+export async function validateSkillYaml(
+  yamlContent: string,
+): Promise<SkillValidationResult> {
+  const res = await fetch(`${API_BASE}/api/skills/validate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ yaml_content: yamlContent }),
+  });
+  if (!res.ok) {
+    throw new Error(`Skill validation request failed: ${res.statusText}`);
+  }
+  return res.json();
+}
