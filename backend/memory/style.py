@@ -142,6 +142,19 @@ def _get_draft_content(skill_ctx) -> str:
     return str(output) if output else ""
 
 
+# Spec defaults applied by WritingProfileStore.reset() (#53). Single
+# source of truth so the deletion route and SharedMemoryStore.delete_all
+# can both reference it.
+WRITING_PROFILE_DEFAULTS: dict[str, Any] = {
+    "tone": "semi-formal",
+    "sentence_length": "medium",
+    "first_person": "I",
+    "signature_phrases": [],
+    "greeting_style": "Hi [Name],",
+    "signoff_style": "Cheers",
+}
+
+
 class WritingProfileStore:
     """CRUD operations for the WritingProfile singleton.
 
@@ -232,6 +245,14 @@ class WritingProfileStore:
             conn.commit()
 
         return self.get()
+
+    def reset(self) -> WritingProfile:
+        """Reset the singleton writing profile to spec defaults (#53).
+
+        Idempotent -- callable on a missing-row state since update_style()
+        flows through _ensure_schema() on the next call.
+        """
+        return self.update_style(WRITING_PROFILE_DEFAULTS)
 
     def format(self) -> str:
         """Render the profile as a style guide string for prompt injection.

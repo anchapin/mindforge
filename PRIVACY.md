@@ -41,6 +41,20 @@ This writes all PGLite records and ChromaDB vectors for the project to a JSON fi
 
 ---
 
+## How to Delete a Single Record (#53)
+
+For data subject deletion of a single record (GDPR Article 17), use:
+
+| Endpoint | Effect |
+|---|---|
+| `DELETE /api/memories/semantic/{id}` | Drops one semantic memory record from ChromaDB |
+| `DELETE /api/memories/episodic/{id}` | Drops one episodic memory row from PGLite. Returns `409` when dependent `task_step` rows exist; pass `?cascade_steps=true` to remove them too |
+| `DELETE /api/memories/style` | Resets the writing profile to spec defaults (idempotent) |
+
+These complement `DELETE /api/memories/all` (project-wide wipe) below.
+
+---
+
 ## How to Delete Your Data
 
 To permanently delete all data for a project:
