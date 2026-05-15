@@ -10,17 +10,15 @@ Tests:
 
 import asyncio
 import logging
-from unittest.mock import patch, MagicMock
 
 import pytest
 
 from backend.memory.store import (
-    SharedMemoryStore,
-    WRITE_QUEUE_MAXSIZE,
-    WRITE_QUEUE_HIGH_WATERMARK,
     WRITE_QUEUE_DROP_POLICY,
+    WRITE_QUEUE_HIGH_WATERMARK,
+    WRITE_QUEUE_MAXSIZE,
+    SharedMemoryStore,
     WriteQueueMetrics,
-    _WriteItem,
 )
 
 
@@ -99,7 +97,7 @@ class TestWriteQueueOverflowPolicy:
                 timeout=0.5,  # If it blocks even briefly, this will fail
             )
             # If we get here, the write succeeded without blocking
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pytest.fail("write() blocked when queue was full - drop_oldest policy not working")
 
     @pytest.mark.asyncio
