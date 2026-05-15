@@ -1,3 +1,7 @@
+/* router.tsx is a router-config module that also defines a tiny inline
+   loading helper. Disable react-refresh/only-export-components for the
+   whole file rather than splitting it into two modules — see PR B notes. */
+/* eslint-disable react-refresh/only-export-components */
 /**
  * TanStack Router configuration (#48).
  *
