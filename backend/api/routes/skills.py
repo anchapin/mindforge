@@ -50,14 +50,46 @@ def list_skills() -> list[dict]:
     return [m.model_dump(mode="json") for m in metadata_list]
 
 
-@router.post("/validate")
-def validate_skill(yaml_content: str) -> dict:
+class SkillValidate(BaseModel):
+    yaml_content: str
+
+
+@router.post("/validate", response_model=dict)
+def validate_skill(payload: SkillValidate) -> dict:
+    """Validate skill YAML without persisting it. Used by SkillEditor (#49)
+    for live validation feedback as the user types.
+
+    Returns:
+      { "valid": bool, "errors": list[str], "graph": {nodes, edges} | None }
+
+    `graph` is included so the editor can render a live DAG preview
+    without re-parsing the YAML on the client.
+    """
     try:
-        skill_def = yaml.safe_load(yaml_content)
+        skill_def = yaml.safe_load(payload.yaml_content)
     except yaml.YAMLError as exc:
-        return {"valid": False, "errors": [f"YAML parse error: {exc}"]}
+        return {"valid": False, "errors": [f"YAML parse error: {exc}"], "graph": None}
+    if not isinstance(skill_def, dict):
+        return {
+            "valid": False,
+            "errors": ["YAML must parse to a mapping (got "
+                       f"{type(skill_def).__name__})"],
+            "graph": None,
+        }
     errors = validate_skill_graph(skill_def)
-    return {"valid": len(errors) == 0, "errors": errors}
+    # Surface the parsed graph for the DAG preview, even when invalid —
+    # the editor can render whatever structure made it past parsing so
+    # the user can spot the broken edge visually.
+    graph_dict = (
+        skill_def.get("execution_graph")
+        if "execution_graph" in skill_def
+        else {"nodes": skill_def.get("nodes", []), "edges": skill_def.get("edges", [])}
+    )
+    return {
+        "valid": len(errors) == 0,
+        "errors": errors,
+        "graph": graph_dict,
+    }
 
 
 @router.get("/{skill_id}", response_model=dict)

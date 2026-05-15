@@ -28,8 +28,10 @@ import { RootLayout } from "./components/layout/RootLayout";
 // MemoryViewer doesn't block the dashboard).
 const TasksPage = lazy(() => import("./routes/TasksPage"));
 const SkillsPage = lazy(() => import("./routes/SkillsPage"));
+const SkillEditPage = lazy(() => import("./routes/SkillEditPage"));
 const MemoryPage = lazy(() => import("./routes/MemoryPage"));
 const PreferencesPage = lazy(() => import("./routes/PreferencesPage"));
+const TaskDebugPage = lazy(() => import("./routes/TaskDebugPage"));
 
 function RouteFallback() {
   return (
@@ -82,12 +84,37 @@ const preferencesRoute = createRoute({
   component: PreferencesPage,
 });
 
+// #49 — SkillEditor lives at two paths: a dedicated /new endpoint and
+// a parameterized /:skillId/edit. The page reads useParams to decide
+// between create and update.
+const skillNewRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/skills/new",
+  component: SkillEditPage,
+});
+
+const skillEditRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/skills/$skillId/edit",
+  component: SkillEditPage,
+});
+
+// #49 — TaskDebug walks the skill_execution_context for a given task.
+const taskDebugRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tasks/$taskId/debug",
+  component: TaskDebugPage,
+});
+
 const routeTree = rootRoute.addChildren([
   indexRoute,
   tasksRoute,
   skillsRoute,
+  skillNewRoute,
+  skillEditRoute,
   memoryRoute,
   preferencesRoute,
+  taskDebugRoute,
 ]);
 
 export const router = createRouter({ routeTree });
