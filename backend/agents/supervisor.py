@@ -208,13 +208,19 @@ async def specialist_node(
 
 _HIGH_STAKES_ACTIONS: frozenset[str] = frozenset(
     [
+        # Email — user-facing external messaging
         "send_email",
         "send_email_reply",
+        "email_send.send",  # EmailSendTool.execute(action="send") — #42
+        # GitHub — code surface
         "github_push",
         "github_create_pr",
         "github_merge_pr",
+        # Stripe — money
         "stripe_refund",
         "stripe_payment",
+        "stripe_api.refund",  # StripeTool.execute(action="refund") — #43 wires this
+        # Destructive
         "delete_memory",
         "delete_task",
     ]

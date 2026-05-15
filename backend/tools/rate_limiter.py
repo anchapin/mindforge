@@ -16,6 +16,7 @@ INTEGRATION_LIMITS: dict[str, int] = {
     "github": 5,
     "stripe": 2,
     "gmail": 10,
+    "email": 10,   # IMAP fetch + SMTP send share this budget (#42)
     "linear": 5,
     # _default covers any integration not explicitly listed
     "_default": 20,

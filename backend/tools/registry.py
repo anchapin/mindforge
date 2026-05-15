@@ -49,11 +49,12 @@ class ToolRegistry:
 def register_all_tools() -> None:
     """Auto-register all built-in tools. Call at startup."""
     from .email_fetch import EmailFetchTool
+    from .email_send import EmailSendTool
     from .github import GitHubTool
     from .integrations.linear import LinearTool
     from .stripe import StripeTool
 
-    for tool_cls in [GitHubTool, StripeTool, EmailFetchTool, LinearTool]:
+    for tool_cls in [GitHubTool, StripeTool, EmailFetchTool, EmailSendTool, LinearTool]:
         try:
             ToolRegistry.register(tool_cls())  # type: ignore[abstract]
         except Exception as exc:
