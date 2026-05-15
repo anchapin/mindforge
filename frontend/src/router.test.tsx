@@ -33,6 +33,20 @@ vi.mock("./lib/api", () => ({
   listMemory: vi.fn().mockResolvedValue({ semantic: [], episodic: [], style: [] }),
   searchMemory: vi.fn().mockResolvedValue([]),
   fetchTasks: vi.fn().mockResolvedValue([]),
+  // Pretend we're past first run so #46's gate doesn't render the wizard
+  // over the route content (the router test doesn't care about onboarding).
+  fetchPreferences: vi.fn().mockResolvedValue({
+    id: "post-onboarding-uuid",
+    proactive_monitoring_enabled: true,
+    email_check_interval_minutes: 30,
+    calendar_check_interval_minutes: 60,
+    billing_alert_threshold_usd: 50,
+    notification_channel: "dashboard",
+    notification_handle: null,
+    created_at: "2026-05-15T00:00:00Z",
+    updated_at: "2026-05-15T00:00:00Z",
+  }),
+  submitOnboarding: vi.fn(),
 }));
 
 // Mock the websocket lib so no real WS connection is attempted
