@@ -5,12 +5,18 @@
  * shell. Page-specific UI lives under <Outlet/>.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useLocation } from "@tanstack/react-router";
+import { useQuery } from "@tanstack/react-query";
 import { NotificationBell } from "../NotificationBell";
 import { ClarificationModal } from "../ClarificationModal";
+import { OnboardingWizard } from "../OnboardingWizard";
 import { WSMessageHandler } from "../WSMessageHandler";
-import { submitClarification } from "../../lib/api";
+import { fetchPreferences, submitClarification } from "../../lib/api";
+import {
+  markOnboardingDismissed,
+  shouldShowOnboarding,
+} from "../../lib/firstRun";
 import { useTaskStore } from "../../stores/taskStore";
 import { useNotificationStore } from "../../stores/notificationStore";
 
@@ -29,6 +35,31 @@ const NAV_ITEMS: NavItem[] = [
 export function RootLayout({ children }: { children: ReactNode }) {
   const wsDisconnected = useTaskStore((s) => s.wsDisconnected);
   const location = useLocation();
+  // First-run gate (#46): GET /api/preferences. The backend returns
+  // { id: "" } when the singleton hasn't been created yet — that's our
+  // signal to render the wizard. The wizard is dismissed permanently for
+  // the browser via localStorage AND in component state (because
+  // localStorage writes don't trigger React re-renders by themselves).
+  const { data: prefs, isLoading: prefsLoading } = useQuery({
+    queryKey: ["preferences"],
+    queryFn: fetchPreferences,
+    staleTime: 5 * 60 * 1000,
+    retry: 0,
+  });
+
+  const [dismissedThisSession, setDismissedThisSession] = useState(false);
+
+  const showOnboarding =
+    !dismissedThisSession &&
+    shouldShowOnboarding({
+      preferencesId: prefs?.id,
+      preferencesLoading: prefsLoading,
+    });
+
+  const handleOnboardingDismiss = () => {
+    markOnboardingDismissed();        // persist for future page loads
+    setDismissedThisSession(true);    // hide immediately, this render
+  };
 
   // Notification + clarification wiring (#47).
   const notifications = useNotificationStore((s) => s.notifications);
@@ -112,6 +143,16 @@ export function RootLayout({ children }: { children: ReactNode }) {
       <main className="mx-auto w-full max-w-4xl flex-1 px-6 py-8 space-y-8">
         {children}
       </main>
+
+      {/* First-run onboarding gate (#46). Rendered as a modal overlay so it
+          sits above whatever route is active. Mounted before the
+          clarification modal so onboarding takes precedence on first run. */}
+      {showOnboarding && (
+        <OnboardingWizard
+          onComplete={handleOnboardingDismiss}
+          onSkip={handleOnboardingDismiss}
+        />
+      )}
 
       {/* Clarification modal queue (#47). One at a time; the rest stay
           queued and surface as the user resolves each. */}
