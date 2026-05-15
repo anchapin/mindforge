@@ -8,6 +8,10 @@ Uses LangGraph StateGraph with SQLite checkpointer for task persistence across r
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from ..memory.store import SharedMemoryStore
 import logging
 import threading
 import uuid
@@ -18,7 +22,6 @@ from typing import Any, Literal, Self
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
-from ..memory.store import SharedMemoryStore
 from . import cmo, coo, engineer, researcher
 from .routing import classify_task_type, route_to_agent
 
@@ -121,7 +124,7 @@ def supervisor_node(state: AgentState) -> AgentState:
 
 async def specialist_node(
     state: AgentState,
-    memory_store: SharedMemoryStore,
+    memory_store,
 ) -> AgentState:
     """Call the specialist agent (CMO, Researcher, Engineer, or COO-self)."""
     task_type = state.context.get("task_type", "general")

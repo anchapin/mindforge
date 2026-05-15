@@ -9,8 +9,9 @@ Exports:
 from .episodic import EpisodicMemory, EpisodicMemoryStore
 from .sanitizer import ContentSource, classify_injection_risk, sanitize_for_memory
 from .semantic import SemanticMemory
-from .store import SharedMemoryStore, classify_task_type
+from .store import SharedMemoryStore
 from .style import WritingProfileStore
+from ..agents.routing import classify_task_type
 
 __all__ = [
     "SharedMemoryStore",
