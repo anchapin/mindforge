@@ -42,6 +42,12 @@ export function OnboardingWizard({ onComplete, onSkip }: OnboardingWizardProps) 
   };
 
   const handleComplete = () => {
+    // The first-run gate (#46) calls onComplete to dismiss the wizard.
+    // Full onboarding POST (writing samples -> writing_profile, integration
+    // tokens -> integration table) happens in a follow-up that adds the
+    // token inputs the current step UI doesn't yet collect. The API
+    // endpoint exists at POST /api/onboarding (see backend issue #34) and
+    // a typed wrapper at frontend/src/lib/api.ts (submitOnboarding).
     onComplete?.();
   };
 
