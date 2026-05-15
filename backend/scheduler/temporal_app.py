@@ -76,6 +76,19 @@ class TemporalClient:
                 activities=list(ALL_ACTIVITIES),
             )
             self._worker_task = asyncio.create_task(self._worker.run())
+
+            # Install recurring schedules (#57 part B). Failures are logged
+            # and swallowed so a misconfigured schedule never blocks startup.
+            try:
+                from .workflows.oauth_refresh import ensure_oauth_refresh_schedule
+
+                await ensure_oauth_refresh_schedule(self)
+            except Exception as exc:  # pragma: no cover - defence-in-depth
+                logger.warning(
+                    "TemporalClient: schedule install error -- continuing (%s)",
+                    exc,
+                )
+
             logger.info(
                 "TemporalClient: connected to %s namespace=%s queue=%s",
                 self.host,
