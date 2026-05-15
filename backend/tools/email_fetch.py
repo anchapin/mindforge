@@ -35,6 +35,47 @@ class EmailFetchTool(BaseTool):  # type: ignore[override]
 
         start = time.monotonic()
 
+        # OAuth-aware path (#57 part C): when the caller asks for the
+        # Composio broker, dispatch through the Composio surface and skip
+        # IMAP entirely. Per AGENTS.md Rule 6 / SPEC §5.4 this stays
+        # opt-in -- omitting oauth_broker (or passing "none"/"imap")
+        # preserves the Phase 1 IMAP fallback used by the email-monitor
+        # workflow today.
+        oauth_broker = (kwargs.pop("oauth_broker", "") or "").strip().lower()
+        if oauth_broker == "composio":
+            from .integrations.composio import (
+                COMPOSIO_DISABLED_ERROR,
+                COMPOSIO_MISSING_CREDENTIAL_ERROR,
+                COMPOSIO_NOT_IMPLEMENTED_ERROR,
+            )
+            from .integrations.composio import _api_key as _composio_key
+            from .integrations.composio import _flag_enabled as _composio_flag
+
+            if not _composio_flag():
+                return ToolResult(
+                    success=False,
+                    error=COMPOSIO_DISABLED_ERROR,
+                    tool_name=self.name,
+                    latency_ms=(time.monotonic() - start) * 1000.0,
+                )
+            if _composio_key() is None:
+                return ToolResult(
+                    success=False,
+                    error=COMPOSIO_MISSING_CREDENTIAL_ERROR,
+                    tool_name=self.name,
+                    latency_ms=(time.monotonic() - start) * 1000.0,
+                )
+            # SDK drop-in goes here. Until then the structured stub keeps
+            # the skill executor honest -- no silent IMAP fallback when
+            # OAuth was explicitly requested.
+            return ToolResult(
+                success=False,
+                error=COMPOSIO_NOT_IMPLEMENTED_ERROR,
+                tool_name=self.name,
+                latency_ms=(time.monotonic() - start) * 1000.0,
+            )
+
+
         host = kwargs.get("host", "imap.gmail.com")
         port = kwargs.get("port", 993)
         username = kwargs.get("username", "")
