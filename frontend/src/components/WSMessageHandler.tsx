@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { getGlobalWS, type WSMessage } from "../lib/websocket";
 import { useTaskStore } from "../stores/taskStore";
 import { useNotificationStore } from "../stores/notificationStore";
+import { useSystemActivityStore } from "../stores/activityStore";
 
 /**
  * Translates incoming WS frames into:
@@ -18,8 +19,9 @@ export function WSMessageHandler() {
   const { upsertTask, setWsDisconnected, updateTaskStatus } = useTaskStore();
   const pushNotification = useNotificationStore((s) => s.pushNotification);
   const pushClarification = useNotificationStore((s) => s.pushClarification);
+  const pushActivity = useSystemActivityStore((s) => s.pushActivity);
 
-  useEffect(() => {
+useEffect(() => {
     const ws = getGlobalWS();
 
     const handler = async (msg: WSMessage) => {
@@ -93,6 +95,61 @@ export function WSMessageHandler() {
         case "stream_token":
           // Streaming token display -- handled by task detail
           break;
+
+        // ── Proactive events (Phase 3 / #92) ───────────────────────────
+
+        case "billing_anomaly_detected":
+          pushActivity({
+            id: `billing-${Date.now()}`,
+            category: "billing",
+            summary: String(msg.message ?? "Billing anomaly detected"),
+            detail: msg.detail ? String(msg.detail) : undefined,
+            severity: (msg.severity as "critical" | "warning" | "info") ?? "warning",
+            timestamp: new Date().toISOString(),
+            dismissed: false,
+          });
+          break;
+
+        case "calendar_conflict_detected":
+          pushActivity({
+            id: `calendar-${Date.now()}`,
+            category: "calendar",
+            summary: String(msg.message ?? "Calendar conflict detected"),
+            detail: msg.detail ? String(msg.detail) : undefined,
+            severity: (msg.severity as "critical" | "warning" | "info") ?? "warning",
+            timestamp: new Date().toISOString(),
+            dismissed: false,
+            actionLabel: "Resolve",
+            actionTarget: "/calendar",
+          });
+          break;
+
+        case "follow_up_draft_created":
+          pushActivity({
+            id: `followup-${Date.now()}`,
+            category: "follow_up",
+            summary: String(msg.message ?? "Follow-up draft created"),
+            detail: msg.detail ? String(msg.detail) : undefined,
+            severity: "info",
+            timestamp: new Date().toISOString(),
+            dismissed: false,
+          });
+          break;
+
+        case "worker_status_changed":
+          pushActivity({
+            id: `worker-${Date.now()}`,
+            category: "worker",
+            summary: String(msg.message ?? "Worker status changed"),
+            detail: msg.detail ? String(msg.detail) : undefined,
+            severity:
+              msg.status === "down" ? ("critical" as const) :
+              msg.status === "recovering" ? ("warning" as const) :
+              ("info" as const),
+            timestamp: new Date().toISOString(),
+            dismissed: false,
+          });
+          break;
       }
     };
 
@@ -105,6 +162,7 @@ export function WSMessageHandler() {
     updateTaskStatus,
     pushNotification,
     pushClarification,
+    pushActivity,
   ]);
 
   return null;

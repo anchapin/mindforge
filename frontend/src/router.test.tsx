@@ -50,6 +50,8 @@ vi.mock("./lib/api", () => ({
     updated_at: "2026-05-15T00:00:00Z",
   }),
   submitOnboarding: vi.fn(),
+  // #90 — Proactive Monitoring Settings UI uses PUT /api/preferences
+  updatePreferences: vi.fn().mockResolvedValue({ status: "updated" }),
 }));
 
 // Mock the websocket lib so no real WS connection is attempted
@@ -176,12 +178,12 @@ describe("router", () => {
   it("renders PreferencesPage at /preferences", async () => {
     renderAt("/preferences");
     await waitFor(() => {
-      const headings = screen.getAllByRole("heading", { name: /Preferences/ });
+      const headings = screen.getAllByRole("heading", { name: /Settings/ });
       expect(headings.length).toBeGreaterThan(0);
     });
-    // Placeholder copy until #46/follow-up wires the real form
+    // #90 — real Proactive Monitoring UI is now rendered
     expect(
-      await screen.findByText(/will be wired in a follow-up/i)
+      await screen.findByRole("heading", { name: /Proactive Monitoring/i })
     ).toBeInTheDocument();
   });
 
