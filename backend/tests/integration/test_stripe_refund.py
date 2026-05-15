@@ -217,12 +217,17 @@ class TestRefundErrors:
 
 class TestHighStakesAndYaml:
     def test_refund_action_is_high_stakes(self):
+        """The canonical dotted action name (tool.action) MUST be in the
+        approval-gate set. The legacy "stripe_refund" string is kept as a
+        backward-compat entry but the test requires the canonical form so
+        a future tool refactor can't silently drop the gate (post-mortem
+        from the Wave 2 code review)."""
         from backend.agents.supervisor import _HIGH_STAKES_ACTIONS
 
-        # Either the dotted form (canonical) OR the legacy "stripe_refund"
-        assert (
-            "stripe_api.refund" in _HIGH_STAKES_ACTIONS
-            or "stripe_refund" in _HIGH_STAKES_ACTIONS
+        assert "stripe_api.refund" in _HIGH_STAKES_ACTIONS, (
+            "Canonical 'stripe_api.refund' must be in _HIGH_STAKES_ACTIONS "
+            "(see SPEC §3b.8 Layer 3 — memory-dominated refund proposals "
+            "must hit the human approval gate)"
         )
 
     def test_subscription_refund_yaml_uses_canonical_tool_name(self):

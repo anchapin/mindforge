@@ -275,11 +275,16 @@ class TestWiring:
             ToolRegistry._tools.clear()
 
     def test_listed_as_high_stakes(self):
-        """The supervisor's approval-gate set must include the new send action
-        so memory-dominated email sends trigger the human-approval cycle."""
+        """The canonical dotted action name (tool.action) MUST be in the
+        approval-gate set. The legacy "send_email" string is kept as a
+        backward-compat entry but the test requires the canonical form."""
         from backend.agents.supervisor import _HIGH_STAKES_ACTIONS
 
-        assert "email_send.send" in _HIGH_STAKES_ACTIONS or "send_email" in _HIGH_STAKES_ACTIONS
+        assert "email_send.send" in _HIGH_STAKES_ACTIONS, (
+            "Canonical 'email_send.send' must be in _HIGH_STAKES_ACTIONS "
+            "(see SPEC §3b.8 Layer 3 — memory-dominated email proposals "
+            "must hit the human approval gate)"
+        )
 
     def test_email_rate_limit_present(self):
         from backend.tools.rate_limiter import INTEGRATION_LIMITS
