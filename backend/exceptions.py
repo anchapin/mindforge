@@ -40,6 +40,7 @@ def _get_exception_category_map():  # type: ignore[no-redef]
         AuthFailure: ExceptionCategory.ESCALATE,  # noqa: F821
         SafetyViolation: ExceptionCategory.ESCALATE,  # noqa: F821
         BudgetExceeded: ExceptionCategory.ESCALATE,  # noqa: F821
+        ContextTooLong: ExceptionCategory.ESCALATE,  # noqa: F821
         # LOG: record only, do not propagate
         HMACTamperError: ExceptionCategory.LOG,  # noqa: F821
         InvalidTokenError: ExceptionCategory.LOG,  # noqa: F821
@@ -154,6 +155,20 @@ class OutOfMemory(Exception):
     """Raised when the system runs out of memory.
 
     Triggers panic handling: task fails, human alert fired.
+    """
+
+    pass
+
+
+class ContextTooLong(Exception):
+    """Raised when a prompt exceeds the per-tier max_context_tokens budget.
+
+    SPEC §5.7.6 -- the LLM router enforces a token budget before sending
+    so we never pay for a request that will be truncated server-side.
+
+    Caller decides whether to:
+      - Surface the error to the user (the conservative default).
+      - Summarize-and-retry the prompt (out of scope for #51).
     """
 
     pass

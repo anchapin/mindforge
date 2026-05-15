@@ -38,12 +38,26 @@ class LLMConfig:
     cloud_provider: str = "openrouter"
     max_tokens: int = 4096
     temperature: float = 0.0
+    # SPEC §5.7.6 -- per-tier prompt-side budget (system + user). The
+    # LLMRouter rejects prompts above this with ContextTooLong BEFORE
+    # any network call so we never pay for truncated requests.
+    max_context_tokens: int = 8192
 
 
 TIER_CONFIGS: dict[InferenceTier, LLMConfig] = {
-    InferenceTier.LOCAL: LLMConfig(InferenceTier.LOCAL, "llama3.2:3b"),
-    InferenceTier.CLOUD_FAST: LLMConfig(InferenceTier.CLOUD_FAST, "google/gemini-2.0-flash"),
-    InferenceTier.CLOUD_HEAVY: LLMConfig(InferenceTier.CLOUD_HEAVY, "openai/gpt-4o"),
+    InferenceTier.LOCAL: LLMConfig(
+        InferenceTier.LOCAL, "llama3.2:3b", max_context_tokens=8192
+    ),
+    InferenceTier.CLOUD_FAST: LLMConfig(
+        InferenceTier.CLOUD_FAST,
+        "google/gemini-2.0-flash",
+        max_context_tokens=1_048_576,  # gemini-2-flash supports 1M
+    ),
+    InferenceTier.CLOUD_HEAVY: LLMConfig(
+        InferenceTier.CLOUD_HEAVY,
+        "openai/gpt-4o",
+        max_context_tokens=128_000,
+    ),
 }
 
 # Fallback chain when primary model fails (circuit breaker open)
@@ -206,6 +220,7 @@ class LLMRouter:
         system: str = "",
         agent_role: str | None = None,
         stream: bool = False,
+        no_cache: bool = False,
     ) -> str | AsyncGenerator[str, None]:
         """Complete a prompt using the appropriate tier.
 
@@ -230,6 +245,34 @@ class LLMRouter:
 
         cfg = TIER_CONFIGS[tier]
 
+        # SPEC §5.7.6 -- max_context_tokens guard. Reject oversize prompts
+        # BEFORE any network call so we never pay for truncated requests.
+        # Combined system+prompt token estimate must fit under the
+        # per-tier budget.
+        from backend.exceptions import ContextTooLong
+
+        prompt_tokens = estimate_tokens(prompt)
+        system_tokens = estimate_tokens(system) if system else 0
+        if prompt_tokens + system_tokens > cfg.max_context_tokens:
+            raise ContextTooLong(
+                f"prompt+system tokens ({prompt_tokens + system_tokens}) "
+                f"exceeds tier {cfg.tier} budget ({cfg.max_context_tokens}); "
+                f"summarize the prompt or escalate to a higher tier."
+            )
+
+        # SPEC §5.7.5 -- prompt cache. Skipped for streaming responses
+        # (chunked replay would need its own codepath; out of scope for #51)
+        # and for explicit no_cache=True calls.
+        from backend.llm.cache import get_global_cache
+
+        prompt_cache = get_global_cache()
+        if not stream and not no_cache:
+            cached = prompt_cache.get(
+                model=cfg.model, system=system, prompt=prompt
+            )
+            if cached is not None:
+                return cached
+
         # Best-effort observability hook (#52). Streaming returns an async
         # generator -- timing it requires consuming the generator, which
         # we don't want to do here, so streams are recorded as a
@@ -253,6 +296,18 @@ class LLMRouter:
                     cfg, system, prompt, stream=stream, agent_role=agent_role
                 )
             outcome = "stream_started" if stream else "success"
+            # SPEC §5.7.5 -- write-through to the cache on success. Streams
+            # bypass per the read-side check above.
+            if not stream and not no_cache and isinstance(result, str):
+                try:
+                    prompt_cache.put(
+                        model=cfg.model,
+                        system=system,
+                        prompt=prompt,
+                        value=result,
+                    )
+                except Exception:  # pragma: no cover - cache must never fail the call
+                    pass
             if record_llm_call is not None:
                 try:
                     record_llm_call(
