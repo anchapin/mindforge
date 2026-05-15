@@ -33,16 +33,32 @@ vi.mock("./lib/api", () => ({
   listMemory: vi.fn().mockResolvedValue({ semantic: [], episodic: [], style: [] }),
   searchMemory: vi.fn().mockResolvedValue([]),
   fetchTasks: vi.fn().mockResolvedValue([]),
+  // #47 — clarification submitter is imported by RootLayout
+  submitClarification: vi.fn().mockResolvedValue(undefined),
 }));
 
 // Mock the websocket lib so no real WS connection is attempted
+// (#47 mounts WSMessageHandler globally so this matters for every route test)
 vi.mock("./lib/websocket", () => ({
+  getGlobalWS: () => ({ subscribe: () => () => {} }),
   connectWebSocket: vi.fn(),
   disconnectWebSocket: vi.fn(),
 }));
 
 // Build a parallel router instance for each test so memory history doesn't
 // leak between specs. Mirrors the structure in src/router.tsx.
+vi.mock("./stores/taskStore", () => {
+  const fakeState = {
+    wsDisconnected: false,
+    upsertTask: () => {},
+    setWsDisconnected: () => {},
+    updateTaskStatus: () => {},
+  };
+  const useTaskStore: any = (selector?: any) =>
+    typeof selector === "function" ? selector(fakeState) : fakeState;
+  return { useTaskStore };
+});
+
 function buildTestRouter(initialPath: string) {
   const TasksPage = lazy(() => import("./routes/TasksPage"));
   const SkillsPage = lazy(() => import("./routes/SkillsPage"));
