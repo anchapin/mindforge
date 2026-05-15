@@ -13,9 +13,15 @@ from .email_monitor import (
     EmailMonitorWorkflow,
     fetch_recent_emails,
 )
+from .oauth_refresh import (
+    OAuthRefreshParams,
+    OAuthRefreshWorkflow,
+    ensure_oauth_refresh_schedule,
+    refresh_composio_bearers,
+)
 
-ALL_WORKFLOWS: tuple = (EmailMonitorWorkflow,)
-ALL_ACTIVITIES: tuple = (fetch_recent_emails,)
+ALL_WORKFLOWS: tuple = (EmailMonitorWorkflow, OAuthRefreshWorkflow)
+ALL_ACTIVITIES: tuple = (fetch_recent_emails, refresh_composio_bearers)
 
 __all__ = [
     "ALL_WORKFLOWS",
@@ -23,4 +29,8 @@ __all__ = [
     "EmailMonitorWorkflow",
     "EmailMonitorParams",
     "fetch_recent_emails",
+    "OAuthRefreshWorkflow",
+    "OAuthRefreshParams",
+    "refresh_composio_bearers",
+    "ensure_oauth_refresh_schedule",
 ]
