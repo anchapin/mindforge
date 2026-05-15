@@ -22,6 +22,9 @@ services:
       - TEMPORAL_HOST=temporal:7233
       - OLLAMA_BASE_URL=http://ollama:11434
       - LOG_LEVEL=${LOG_LEVEL:-INFO}
+      # Composio (Phase 4 -- opt-in; #56 spike, #57 wires live calls)
+      - ENABLE_COMPOSIO=${ENABLE_COMPOSIO:-false}
+      - COMPOSIO_API_KEY=${COMPOSIO_API_KEY:-}
     env_file: [.env, .env.local]
     depends_on:
       chroma:
