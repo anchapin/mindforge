@@ -10,20 +10,65 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+def _strip_inline_comments(text: str) -> str:
+    """Remove inline -- comments from SQL text, preserving string literals."""
+    lines = []
+    for line in text.splitlines():
+        idx = line.find("--")
+        if idx >= 0:
+            line = line[:idx]
+        if line.strip():
+            lines.append(line.rstrip())
+    return "\n".join(lines)
+
+
+def _fix_default_func(sql: str) -> str:
+    """Wrap bare DEFAULT <func>() expressions in parens for sqlite3 compatibility.
+
+    Python's sqlite3 module cannot parse bare function expressions in DEFAULT
+    clauses (e.g. ``DEFAULT lower(hex(randomblob(16)))``) — the tokenizer
+    rejects them as "near \"(\": syntax error". This function wraps those
+    bare function defaults in parentheses without modifying schema.sql.
+
+    String literals (e.g. DEFAULT 'foo') are unaffected.
+    """
+    import re
+    return re.sub(
+        r"(?i)\bDEFAULT\s+lower\(hex\(randomblob\((\d+)\)\)\)",
+        r"DEFAULT (lower(hex(randomblob(\1))))",
+        sql,
+    )
+
+
 @pytest.fixture
-def pglite_test_db(tmp_path: Path) -> MagicMock:  # type: ignore[misc,return-value]
+def pglite_test_db(tmp_path: Path):
     """Isolated PGLite DB for each test.
 
     Creates a temporary SQLite database and initializes the schema.
-    Yields a mock connection for unit tests.
+    Yields a real sqlite3.Connection so tests can query it directly.
+
+    Note: schema.sql uses bare DEFAULT expressions for generated IDs
+    (e.g. ``DEFAULT lower(hex(randomblob(16)))``). Python's sqlite3 module
+    cannot parse bare function expressions in DEFAULT clauses — the tokenizer
+    rejects them as "near \"(\": syntax error". We fix this by wrapping bare
+    DEFAULT function expressions in parentheses before execution, without
+    modifying schema.sql on disk. String literals ('foo') are unaffected.
     """
     import sqlite3
 
     db_path = tmp_path / "test.db"
     conn = sqlite3.connect(str(db_path))
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys = ON")
     schema = Path(__file__).parent.parent / "db" / "schema.sql"
     if schema.exists():
-        conn.executescript(schema.read_text())
+        clean = _strip_inline_comments(schema.read_text())
+        for stmt in clean.split(";"):
+            stmt = stmt.strip()
+            if not stmt:
+                continue
+            conn.execute(_fix_default_func(stmt))
+        conn.commit()
     yield conn
     conn.close()
 
