@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 
 CHROMA_HOST = os.getenv("CHROMA_HOST", "http://127.0.0.1:8000")
 CHROMA_COLLECTION = "semantic_memory"
-HMAC_KEY = os.getenv("MEMORY_HMAC_KEY", "").encode() or None
+HMAC_KEY: bytes | None = None
 
 # RRF constant
 RRF_K = 60
@@ -96,8 +96,9 @@ class SemanticMemory:
         hmac_key: bytes | None = None,
         chroma_host: str | None = None,
     ):
-        self.hmac_key = hmac_key or HMAC_KEY or b"dev-only-key"
+        self.hmac_key = hmac_key or self._derive_hmac_key()
         self._chunk_config = ChunkConfig()
+        self._degraded = False  # True when ChromaDB operations fail
 
         if chroma_dir:
             # Persistent local ChromaDB
@@ -120,9 +121,43 @@ class SemanticMemory:
         self._bm25_corpus: list[str] = []
         self._bm25_ids: list[str] = []
 
+    @property
+    def degraded(self) -> bool:
+        """True when ChromaDB has been unavailable for a recent operation."""
+        return self._degraded
+
+    def _set_degraded(self) -> None:
+        """Mark this store as degraded due to ChromaDB unavailability."""
+        self._degraded = True
+
     # ---------------------------------------------------------------------------
     # HMAC helpers
     # ---------------------------------------------------------------------------
+
+    def _derive_hmac_key(self) -> bytes:
+        """Derive HMAC key from FERNET_KEY using HKDF, or fall back gracefully.
+
+        From SPEC.md §3b.6 - integration credentials are never logged.
+        """
+        from cryptography.hazmat.primitives import hashes
+        from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+
+        fermert_key = os.getenv("FERNET_KEY", "")
+        if not fermert_key:
+            logger.warning("FERNET_KEY not set — using random HMAC key (memory integrity checks disabled)")
+            return b"dev-only-key"
+
+        try:
+            hkdf = HKDF(
+                algorithm=hashes.SHA256(),
+                length=32,
+                salt=b"mindforge-hmac-v1",
+                info=b"semantic-memory-hmac-key",
+            )
+            return hkdf.derive(fermert_key.encode())
+        except Exception as exc:
+            logger.warning("HMAC key derivation failed (%s) — using random key", exc)
+            return b"dev-only-key"
 
     def _sign(self, text: str, metadata: dict) -> str:
         """Create HMAC-SHA256 signature for a memory entry."""
@@ -355,42 +390,73 @@ class SemanticMemory:
         """Hybrid retrieval: vector similarity + BM25 keyword search + RRF fusion.
 
         This is the primary retrieval method used by SharedMemoryStore.
+        On ChromaDB failure, returns empty list with degraded_quality flag.
+        """
+        try:
+            return await self._retrieve_impl(query, project_id, top_k, use_bm25)
+        except Exception as exc:
+            logger.warning(
+                "ChromaDB retrieval failed, returning empty list (degraded mode): %s",
+                exc,
+            )
+            self._set_degraded()
+            return []
+
+    async def _retrieve_impl(
+        self,
+        query: str,
+        project_id: str | None = None,
+        top_k: int = 5,
+        use_bm25: bool = True,
+    ) -> list[SemanticMemoryRecord]:
+        """Internal implementation of hybrid retrieval.
+
+        Raises:
+            Exception: Any ChromaDB or embedding failure propagates to trigger
+                       graceful degradation in retrieve().
         """
         try:
             from rank_bm25 import BM25Okapi  # noqa: F401
         except ImportError:
             use_bm25 = False
 
-        # Embed query (async)
-        query_embs = await embed_texts([query])
-        if not query_embs:
+        try:
+            query_embs = await embed_texts([query])
+            if not query_embs:
+                return []
+            query_emb = query_embs[0]
+        except Exception as emb_err:
+            logger.warning("Embedding failed, returning empty semantic results: %s", emb_err)
             return []
-        query_emb = query_embs[0]
 
-        # Vector search — no MIN_SIMILARITY filter here so BM25 can boost low-similarity matches
-        vector_results = await self._vector_search(
-            query_emb, project_id=project_id, top_k=top_k * 2, min_similarity=0.0
-        )
+        try:
+            vector_results = await self._vector_search(
+                query_emb, project_id=project_id, top_k=top_k * 2, min_similarity=0.0
+            )
+        except Exception as chroma_err:
+            logger.warning("ChromaDB query failed, semantic retrieval unavailable: %s", chroma_err)
+            return []
+
         vector_by_id = {r.id: r for r in vector_results}
 
-        # BM25 search
         bm25_scores: dict[str, float] = {}
         if use_bm25 and self._bm25_index is not None:
-            tokenized_q = query.lower().split()
-            raw_scores = self._bm25_index.get_scores(tokenized_q)
-            max_bm25 = max(raw_scores) if max(raw_scores) > 0 else 1.0
-            for i, record_id in enumerate(self._bm25_ids):
-                if record_id in vector_by_id:
-                    bm25_scores[record_id] = raw_scores[i] / max_bm25
+            try:
+                tokenized_q = query.lower().split()
+                raw_scores = self._bm25_index.get_scores(tokenized_q)
+                max_bm25 = max(raw_scores) if max(raw_scores) > 0 else 1.0
+                for i, record_id in enumerate(self._bm25_ids):
+                    if record_id in vector_by_id:
+                        bm25_scores[record_id] = raw_scores[i] / max_bm25
+            except Exception as bm25_err:
+                logger.warning("BM25 scoring failed, using vector-only: %s", bm25_err)
 
-        # Reciprocal Rank Fusion
         fused: dict[str, float] = {}
         all_ids = set(list(vector_by_id.keys()) + list(bm25_scores.keys()))
 
         for record_id in all_ids:
             v_score = 0.0
             if record_id in vector_by_id:
-                # Convert distance to similarity proxy (higher = better)
                 v_score = 1.0 / (
                     RRF_K + 1 + float(vector_by_id[record_id].metadata.get("distance", 0))
                 )
@@ -398,7 +464,6 @@ class SemanticMemory:
             b_score_norm = b_score / (RRF_K + 1 + b_score) if b_score > 0 else 0.0
             fused[record_id] = v_score + b_score_norm
 
-        # Sort by fused score and return top-k verified records
         ranked = sorted(fused.items(), key=lambda x: x[1], reverse=True)
         return [vector_by_id[rid] for rid, _ in ranked[:top_k] if rid in vector_by_id][:top_k]
 

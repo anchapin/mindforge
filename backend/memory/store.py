@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import Any
 
 from .episodic import EpisodicMemory, EpisodicMemoryStore
@@ -25,6 +26,11 @@ from .semantic import SemanticMemory
 from .style import WritingProfileStore
 
 logger = logging.getLogger(__name__)
+
+# Queue configuration
+WRITE_QUEUE_MAXSIZE = 1000
+WRITE_QUEUE_HIGH_WATERMARK = 0.75  # 75% capacity triggers warning
+WRITE_QUEUE_DROP_POLICY = "drop_oldest"  # "drop_oldest" | "raise"
 
 # ---------------------------------------------------------------------------------------
 # Task type classification (keyword-based, no LLM)
@@ -63,9 +69,10 @@ class MemoryResult:
     memory_type: str  # "semantic" | "episodic" | "style"
     records: list[Any] = field(default_factory=list)
     formatted: str = ""  # human-readable rendering
+    degraded_quality: bool = False  # True when semantic layer failed (ChromaDB unavailable)
 
     def to_prompt_block(self) -> str:
-        if not self.records:
+        if not self.records and not self.degraded_quality:
             return ""
         return f"## {self.memory_type.title()} Memory\n{self.formatted}"
 
@@ -76,8 +83,12 @@ class MemoryResult:
 
 
 def format_combined_context(results: list[MemoryResult]) -> str:
-    """Combine heterogeneous memory results into a single context string for prompt injection."""
-    sections = [r.to_prompt_block() for r in results if r.records]
+    """Combine heterogeneous memory results into a single context string for prompt injection.
+
+    degraded_quality blocks are included even when records is empty so the LLM knows
+    about the degraded state and can surface a warning to the user.
+    """
+    sections = [r.to_prompt_block() for r in results if r.records or r.degraded_quality]
     return "\n\n".join(sections)
 
 
@@ -91,6 +102,54 @@ class _WriteItem:
     memory_type: str
     content: dict[str, Any]
     project_id: str | None = None
+
+
+# ---------------------------------------------------------------------------------------
+# Write queue metrics
+# ---------------------------------------------------------------------------------------
+
+
+@dataclass
+class WriteQueueMetrics:
+    """Metrics for write queue monitoring."""
+
+    writes_enqueued: int = 0
+    writes_completed: int = 0
+    writes_dropped: int = 0
+    writes_failed: int = 0
+    watermark_warnings: int = 0
+
+    _lock: Lock = field(default_factory=Lock)
+
+    def record_enqueued(self) -> None:
+        with self._lock:
+            self.writes_enqueued += 1
+
+    def record_completed(self) -> None:
+        with self._lock:
+            self.writes_completed += 1
+
+    def record_dropped(self) -> None:
+        with self._lock:
+            self.writes_dropped += 1
+
+    def record_failed(self) -> None:
+        with self._lock:
+            self.writes_failed += 1
+
+    def record_watermark_warning(self) -> None:
+        with self._lock:
+            self.watermark_warnings += 1
+
+    def to_dict(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                "writes_enqueued": self.writes_enqueued,
+                "writes_completed": self.writes_completed,
+                "writes_dropped": self.writes_dropped,
+                "writes_failed": self.writes_failed,
+                "watermark_warnings": self.watermark_warnings,
+            }
 
 
 # ---------------------------------------------------------------------------------------
@@ -125,10 +184,16 @@ class SharedMemoryStore:
         self._style = WritingProfileStore(db_path=db_path)
         self._dedup_hours = dedup_lookback_hours
 
-        # Async write queue
-        self._write_queue: asyncio.Queue = asyncio.Queue()
+        # Bounded async write queue with backpressure
+        self._write_queue: asyncio.Queue = asyncio.Queue(maxsize=WRITE_QUEUE_MAXSIZE)
         self._write_worker_task: asyncio.Task | None = None
         self._started = False
+
+        # Write queue metrics
+        self._metrics = WriteQueueMetrics()
+
+        # Track if we've logged watermark warning (reset on drain)
+        self._watermark_logged = False
 
     # ---------------------------------------------------------------------------
     # Lifecycle
@@ -180,21 +245,36 @@ class SharedMemoryStore:
 
         # Semantic layer — hybrid vector + BM25 retrieval
         if "semantic" in memory_types:
-            semantic_records = await self._semantic.retrieve(
-                query=query,
-                project_id=project_id,
-                top_k=top_k,
-            )
-            formatted = "\n".join(
-                f"- [{r.metadata.get('agent_role', '?')}] {r.text[:200]}" for r in semantic_records
-            )
-            results.append(
-                MemoryResult(
-                    memory_type="semantic",
-                    records=semantic_records,
-                    formatted=formatted or "(no relevant semantic memories)",
+            try:
+                semantic_records = await self._semantic.retrieve(
+                    query=query,
+                    project_id=project_id,
+                    top_k=top_k,
                 )
-            )
+                formatted = "\n".join(
+                    f"- [{r.metadata.get('agent_role', '?')}] {r.text[:200]}" for r in semantic_records
+                )
+                results.append(
+                    MemoryResult(
+                        memory_type="semantic",
+                        records=semantic_records,
+                        formatted=formatted or "(no relevant semantic memories)",
+                    )
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Semantic memory retrieval failed (ChromaDB unavailable?): %s. "
+                    "Falling back to episodic-only retrieval.",
+                    exc,
+                )
+                results.append(
+                    MemoryResult(
+                        memory_type="semantic",
+                        records=[],
+                        formatted="(semantic memory unavailable — degraded mode)",
+                        degraded_quality=True,
+                    )
+                )
 
         # Episodic layer
         if "episodic" in memory_types:
@@ -240,16 +320,74 @@ class SharedMemoryStore:
         content: dict[str, Any],
         project_id: str | None = None,
     ) -> None:
-        """Enqueue a memory write. Write happens asynchronously."""
+        """Enqueue a memory write. Blocks caller if queue is full (backpressure).
+
+        When queue reaches high watermark (75%), a warning is logged.
+        When queue is full, oldest entries are dropped to make room (drop_oldest policy).
+        """
         if not self._started:
             await self.start()
-        await self._write_queue.put(
-            _WriteItem(
-                memory_type=memory_type,
-                content=content,
-                project_id=project_id,
-            )
+
+        # Check high watermark and log warning once
+        await self._check_watermark()
+
+        # Try to enqueue with backpressure handling
+        item = _WriteItem(
+            memory_type=memory_type,
+            content=content,
+            project_id=project_id,
         )
+
+        try:
+            self._write_queue.put_nowait(item)
+            self._metrics.record_enqueued()
+        except asyncio.QueueFull:
+            # Queue full — apply drop_oldest policy
+            if WRITE_QUEUE_DROP_POLICY == "drop_oldest":
+                try:
+                    # Remove oldest item to make room
+                    self._write_queue.get_nowait()
+                    self._metrics.record_dropped()
+                    # Now put the new item
+                    self._write_queue.put_nowait(item)
+                    self._metrics.record_enqueued()
+                    logger.warning(
+                        "Write queue overflow: dropped oldest entry. "
+                        "Queue size: %d/%d",
+                        self._write_queue.qsize(),
+                        WRITE_QUEUE_MAXSIZE,
+                    )
+                except asyncio.QueueFull:
+                    # Even after dropping, queue is full — drop the new item
+                    self._metrics.record_dropped()
+                    logger.error(
+                        "Write queue critical overflow: dropped incoming write. "
+                        "Queue size: %d/%d",
+                        self._write_queue.qsize(),
+                        WRITE_QUEUE_MAXSIZE,
+                    )
+            else:
+                # raise policy
+                raise RuntimeError(
+                    f"Write queue full ({WRITE_QUEUE_MAXSIZE} items). "
+                    f"Backpressure requires caller to retry."
+                )
+
+    async def _check_watermark(self) -> None:
+        """Log warning when queue reaches high watermark (75% capacity)."""
+        if self._watermark_logged:
+            return
+        fill_ratio = self._write_queue.qsize() / WRITE_QUEUE_MAXSIZE
+        if fill_ratio >= WRITE_QUEUE_HIGH_WATERMARK:
+            self._watermark_logged = True
+            self._metrics.record_watermark_warning()
+            logger.warning(
+                "Write queue high watermark reached: %d/%d (%.0f%%). "
+                "Backpressure active. Consider scaling ChromaDB or increasing queue size.",
+                self._write_queue.qsize(),
+                WRITE_QUEUE_MAXSIZE,
+                fill_ratio * 100,
+            )
 
     async def write_semantic(
         self,
@@ -287,7 +425,10 @@ class SharedMemoryStore:
         self._episodic.insert(record)
 
     async def _process_writes(self) -> None:
-        """Background worker: processes write queue with deduplication."""
+        """Background worker: processes write queue with deduplication.
+
+        Tracks completed writes and resets watermark warning when queue drains.
+        """
         while True:
             item = await self._write_queue.get()
             if item is None:
@@ -309,7 +450,15 @@ class SharedMemoryStore:
                     logger.warning("Unknown memory_type in write queue: %s", item.memory_type)
             except Exception as exc:
                 logger.error("Error processing memory write: %s", exc)
-            self._write_queue.task_done()
+                self._metrics.record_failed()
+            else:
+                self._metrics.record_completed()
+            finally:
+                self._write_queue.task_done()
+
+            # Reset watermark flag when queue drains below threshold
+            if self._watermark_logged and self._write_queue.qsize() < int(WRITE_QUEUE_MAXSIZE * WRITE_QUEUE_HIGH_WATERMARK):
+                self._watermark_logged = False
 
     # ---------------------------------------------------------------------------
     # Style
@@ -347,3 +496,11 @@ class SharedMemoryStore:
 
     def semantic_count(self, project_id: str | None = None) -> int:
         return self._semantic.count(project_id=project_id)
+
+    def get_queue_metrics(self) -> dict[str, Any]:
+        """Return current write queue metrics."""
+        metrics: dict[str, Any] = self._metrics.to_dict()  # type: ignore[assignment]
+        metrics["queue_size"] = self._write_queue.qsize()
+        metrics["queue_maxsize"] = WRITE_QUEUE_MAXSIZE
+        metrics["queue_fill_ratio"] = float(self._write_queue.qsize()) / WRITE_QUEUE_MAXSIZE
+        return metrics

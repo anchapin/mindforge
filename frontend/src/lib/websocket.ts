@@ -14,8 +14,8 @@ export type WSMessageType =
   | "billing_anomaly_detected"
   | "calendar_conflict_detected"
 | "follow_up_draft_created"
-| "worker_status_changed"
-| "pong";
+  | "worker_status_changed"
+  | "pong";
 
 export interface WSMessage {
   type: WSMessageType;
