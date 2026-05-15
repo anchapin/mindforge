@@ -6,6 +6,7 @@ From SPEC.md Section 2.3, 5.1.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime
 from typing import Any
@@ -49,6 +50,64 @@ def _evaluate_condition(condition: str, scratch: dict[str, Any]) -> bool:
     return False
 
 
+def _try_get_tool(registry, name):
+    """ToolRegistry.get raises KeyError on miss; we want None for prompt-rendering."""
+    try:
+        return registry.get(name) if registry is not None else None
+    except Exception:
+        return None
+
+
+def _format_tool_catalog(tool_names, registry):
+    """Render the tools available to a node into a system-prompt block.
+
+    Looks up each tool in the registry (silently skips unknown names so a
+    misnamed tool doesn't kill the whole DAG). Each entry shows
+    name + class description + required integrations.
+    """
+    if not tool_names or registry is None:
+        return ""
+    lines = []
+    for name in tool_names:
+        tool = _try_get_tool(registry, name)
+        if tool is None:
+            continue
+        desc = (getattr(tool, "description", "") or "").strip()
+        integrations = getattr(tool, "required_integrations", []) or []
+        line = f"- {name}"
+        if desc:
+            line += f": {desc}"
+        if integrations:
+            line += f" (requires: {', '.join(integrations)})"
+        lines.append(line)
+    if not lines:
+        return ""
+    return "## Available tools\n" + "\n".join(lines)
+
+
+def _format_scratch_context(scratch, nodes_completed):
+    """Render prior-node outputs as a user-prompt block so a downstream
+    node has access to what came before. Without this every node sees
+    only its own goal and multi-step DAGs degenerate into independent
+    single-shot calls."""
+    if not nodes_completed:
+        return ""
+    blocks = []
+    for node_id in nodes_completed:
+        entry = scratch.get(node_id)
+        if not isinstance(entry, dict) or entry.get("status") != "success":
+            continue
+        output = entry.get("output", {})
+        if isinstance(output, dict):
+            text = output.get("text") or json.dumps(output, default=str)
+        else:
+            text = str(output)
+        blocks.append(f"### {node_id}\n{text}")
+    if not blocks:
+        return ""
+    return "## Prior node outputs (scratch)\n" + "\n\n".join(blocks)
+
+
 async def execute_node(
     node: SkillNode,
     ctx: SkillExecutionContext,
@@ -57,45 +116,64 @@ async def execute_node(
 ) -> NodeResult:
     """Execute a single skill node.
 
+    Builds the prompt from three layers and calls the injected llm_complete:
+      1. System prompt: agent identity + node goal + the tool catalog (so the
+         model knows what's available — names, descriptions, integration reqs).
+      2. User prompt: skill description + node goal + prior scratch state (so
+         the model can build on previous nodes' outputs instead of starting
+         fresh every time — this is what makes multi-node DAGs work).
+      3. Output is captured into ctx.scratch[node.id] so the next node can
+         read it via _format_scratch_context.
+
     Args:
         node: The SkillNode to execute.
         ctx: The current execution context.
-        llm_complete: Callable(prompt, system, agent_role) -> str.
-        tools: ToolRegistry instance for resolving tool names.
+        llm_complete: Async callable(prompt, system, agent_role) -> str.
+            In production this is LLMRouter.complete; tests pass a fake.
+        tools: ToolRegistry (or any object with a .get(name) -> BaseTool).
     """
     scratch = ctx.scratch
 
     try:
-        # Build system prompt from node goal
-        system = (
-            f"You are a {node.agent} agent. "
-            f"Your task: {node.goal}\n"
-            f"Working directory: skill scratch pad."
-        )
+        # Layer 1: system prompt — agent identity + goal + tool catalog
+        tool_catalog = _format_tool_catalog(node.tools or [], tools)
+        system_parts = [
+            f"You are a {node.agent} agent.",
+            f"Your task: {node.goal}",
+        ]
+        if tool_catalog:
+            system_parts.append(tool_catalog)
+        system = "\n\n".join(system_parts)
 
-        # Assemble tools if any
-        available_tools = []
-        if node.tools:
-            for tool_name in node.tools:
-                tool = tools.get(tool_name) if tools else None
-                if tool:
-                    available_tools.append(tool)
+        # Layer 2: user prompt — skill description + goal + prior scratch
+        prompt_parts = [
+            f"## Skill\n{ctx.skill.description}",
+            f"## Goal\n{node.goal}",
+        ]
+        scratch_block = _format_scratch_context(scratch, ctx.nodes_completed)
+        if scratch_block:
+            prompt_parts.append(scratch_block)
+        prompt = "\n\n".join(prompt_parts)
 
-        # Call LLM — currently a stub that returns a simple completion
-        # The actual LLM call is wired through the supervisor
-        prompt = ctx.skill.description + "\n\nGoal: " + node.goal
         output_text = await llm_complete(
             prompt=prompt,
             system=system,
             agent_role=node.agent,
         )
 
-        output: dict[str, Any] = {"text": output_text, "tools_used": node.tools}
-
-        scratch[node.id] = {
-            "status": "success",
-            "output": output,
+        # Track which tools were actually offered to the model — useful for
+        # observability / future tool-call enforcement.
+        tools_offered = [
+            name for name in (node.tools or [])
+            if _try_get_tool(tools, name) is not None
+        ]
+        output: dict[str, Any] = {
+            "text": output_text,
+            "tools_offered": tools_offered,
+            "tools_used": node.tools,  # kept for back-compat with existing tests
         }
+
+        scratch[node.id] = {"status": "success", "output": output}
         ctx.nodes_completed.append(node.id)
 
         return NodeResult(node_id=node.id, status="success", output=output)
