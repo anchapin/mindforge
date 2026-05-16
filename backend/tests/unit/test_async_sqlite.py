@@ -9,20 +9,17 @@ Tests that:
 
 from __future__ import annotations
 
-import asyncio
-import tempfile
+import os
+import pathlib
+import sys
 import uuid
 from datetime import datetime
 
 import pytest
 
-
-# Use absolute imports to avoid circular dependencies in test
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
-
-# Patch os.makedirs before any imports that would use it
+# Patch os.makedirs BEFORE any imports that would use it.
+# The memory stores call os.makedirs for their DB directories,
+# which would fail in the test environment without this patch.
 _original_makedirs = os.makedirs
 def _patched_makedirs(path, *args, **kwargs):
     if isinstance(path, pathlib.Path):
@@ -32,11 +29,13 @@ def _patched_makedirs(path, *args, **kwargs):
         return
     return _original_makedirs(path, *args, **kwargs)
 
-import pathlib
 os.makedirs = _patched_makedirs  # type: ignore[assignment]
 
-from memory.episodic import EpisodicMemoryStore, EpisodicMemory, AsyncSQLitePool
-from memory.style import WritingProfileStore, WritingProfile
+# Add backend/ to path so 'from memory.episodic import ...' resolves correctly
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'backend'))
+
+from memory.episodic import AsyncSQLitePool, EpisodicMemory, EpisodicMemoryStore  # noqa: E402
+from memory.style import WritingProfileStore  # noqa: E402
 
 
 class TestAsyncSQLitePool:
@@ -334,10 +333,10 @@ class TestNoSyncSqliteInAsyncContext:
 
     def test_episodic_store_has_no_sqlite3_import(self):
         """episodic.py should not import sqlite3 directly for sync operations."""
-        import memory.episodic as episodic_module
-
         # Check module source doesn't have sync sqlite3 usage
         import inspect
+
+        import memory.episodic as episodic_module
         source = inspect.getsource(episodic_module)
 
         # Should use aiosqlite.connect, not sqlite3.connect
@@ -346,9 +345,9 @@ class TestNoSyncSqliteInAsyncContext:
 
     def test_style_store_has_no_sqlite3_import(self):
         """style.py should not import sqlite3 directly for sync operations."""
-        import memory.style as style_module
-
         import inspect
+
+        import memory.style as style_module
         source = inspect.getsource(style_module)
 
         # Should use aiosqlite.connect, not sqlite3.connect

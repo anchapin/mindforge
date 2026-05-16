@@ -118,7 +118,12 @@ async def _ai_sqlite_connect(db_path: str) -> ai_sqlite_Connection:
 
 def _dict_row_factory(cursor: Any, row: tuple) -> dict:
     """Convert a sqlite row to a dict using column names."""
-    return dict(zip(cursor.column_names, row, strict=True))
+    # aiosqlite uses cursor.column_names; sqlite3 uses cursor.description
+    if hasattr(cursor, 'column_names'):
+        col_names = cursor.column_names
+    else:
+        col_names = [d[0] for d in cursor.description] if cursor.description else []
+    return dict(zip(col_names, row, strict=True))
 
 
 # ---------------------------------------------------------------------------------------
