@@ -488,7 +488,7 @@ async def approve_task(task_id: str, payload: ApprovalRequest, db=Depends(db_dep
             if content:
                 style_fields = await extract_style_fields(content, llm_router.complete)
                 if style_fields:
-                    style_store.update_style(style_fields)
+                    await style_store.update_style(style_fields)
         except Exception:
             pass  # Style learning is best-effort; never fail approval due to it
 

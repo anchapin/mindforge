@@ -348,6 +348,17 @@ class WritingProfileStore:
             row = await self._pool.execute_one(
                 "SELECT * FROM writing_profile WHERE id = ?", (self._SINGLETON_ID,)
             )
+        if not row:
+            # Still missing — create from spec defaults
+            row = {
+                "id": self._SINGLETON_ID,
+                "tone": "semi-formal",
+                "sentence_length": "medium",
+                "first_person": "I",
+                "signature_phrases": "[]",
+                "greeting_style": "Hi [Name],",
+                "signoff_style": "Cheers",
+            }
         return WritingProfile.from_row(row)
 
     async def update_style(self, updates: dict[str, Any]) -> WritingProfile:
