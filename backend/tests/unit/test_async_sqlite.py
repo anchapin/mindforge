@@ -31,11 +31,18 @@ def _patched_makedirs(path, *args, **kwargs):
 
 os.makedirs = _patched_makedirs  # type: ignore[assignment]
 
-# Add backend/ to path so 'from memory.episodic import ...' resolves correctly
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', '..', 'backend'))
+# Add mindforge/ to sys.path so that:
+#   'from backend.memory.episodic import ...' resolves correctly
+#   (the tests use the backend. prefix, like test_phase1_exit_criteria.py)
+_backend_path = os.path.join(os.path.dirname(__file__), '..', '..', '..')
+sys.path.insert(0, _backend_path)
 
-from memory.episodic import AsyncSQLitePool, EpisodicMemory, EpisodicMemoryStore  # noqa: E402
-from memory.style import WritingProfileStore  # noqa: E402
+from backend.memory.episodic import (  # noqa: E402
+    AsyncSQLitePool,
+    EpisodicMemory,
+    EpisodicMemoryStore,
+)
+from backend.memory.style import WritingProfileStore  # noqa: E402
 
 
 class TestAsyncSQLitePool:
