@@ -36,40 +36,45 @@ jobs:
           LOG_LEVEL=INFO
           EOF
           touch .env.local
-      - name: Start test services
-        run: docker compose --profile test up -d
-
-      - name: Wait for chroma to be healthy
+      - name: Test with diagnostics and cleanup
         run: |
-          # Poll until chroma is healthy (up to 120s)
+          echo "=== [STEP-START] $(date -Iseconds) ==="
+          echo "github.run_id=$GITHUB_RUN_ID github.run_attempt=$GITHUB_RUN_ATTEMPT"
+          echo "runner.name=$RUNNER_NAME runner.os=$RUNNER_OS"
+
+          echo "=== [SERVICES-START] $(date -Iseconds) ==="
+          docker compose --profile test up -d
+          echo "=== [SERVICES-UP] $(date -Iseconds) ==="
+
+          echo "=== [CHROMA-WAIT-START] $(date -Iseconds) ==="
           for i in $(seq 1 24); do
-            if docker exec $(docker compose ps -q chroma 2>/dev/null) \
-               python -c "import httpx; httpx.get('http://127.0.0.1:8000/api/v1/heartbeat').raise_for_status()" 2>/dev/null; then
-              echo "chroma healthy after ${i}0s"
-              break
-            fi
+            docker exec $(docker compose ps -q chroma 2>/dev/null) \
+              python -c "import httpx; httpx.get('http://127.0.0.1:8000/api/v1/heartbeat').raise_for_status()" 2>/dev/null && \
+              echo "=== [CHROMA-READY] after ${i}0s ===" && break
             if [ $i -eq 24 ]; then
-              echo "chroma failed to become healthy — dumping logs:"
+              echo "=== [CHROMA-FAILED] $(date -Iseconds) ==="
               docker compose logs chroma
               exit 1
             fi
             sleep 5
           done
-          echo "Services ready — running tests"
 
-      - name: Run tests
-        run: |
-          # Wrap entire test sequence in a timeout so a hang doesn't block docker compose down
-          # If pytest hangs (LangGraph async deadlock), timeout kills it after 5 min and
-          # the non-zero exit code correctly fails the job.
+          echo "=== [TESTS-START] $(date -Iseconds) ==="
+          # Capture test exit code before cleanup (|| true) can swallow it
           timeout 300 bash -c '
             pytest backend/tests/unit -q --tb=short
             pytest backend/tests/integration -q --tb=short
           '
+          TEST_EXIT=$?
+          echo "=== [TESTS-DONE] exit=$TEST_EXIT $(date -Iseconds) ==="
 
-      - name: Stop services
-        if: always()
-        run: timeout 180 docker compose --profile test down --timeout 30 --remove-orphans || true
+          echo "=== [CLEANUP-START] $(date -Iseconds) ==="
+          # Same-step cleanup: no runner reschedule = no 291s gap
+          timeout 180 docker compose --profile test down --timeout 30 --remove-orphans || true
+          echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
+          echo "=== [STEP-END] $(date -Iseconds) ==="
+
+          exit $TEST_EXIT
 
   build-images:
     runs-on: ubuntu-latest
