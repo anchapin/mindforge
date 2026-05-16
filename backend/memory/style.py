@@ -78,7 +78,7 @@ Text to analyze:
 Return only the JSON object, no markdown or explanation."""
 
 
-async def extract_style_fields(content: str, llm_complete) -> dict[str, Any]:
+async def extract_style_fields(content: str, _llm_complete=None) -> dict[str, Any]:
     """Extract WritingProfile fields from content using an LLM.
 
     Uses ``llm_router.complete`` internally so that prompts are cached
@@ -86,7 +86,7 @@ async def extract_style_fields(content: str, llm_complete) -> dict[str, Any]:
 
     Args:
         content: The approved draft text (either user-edited or original draft output).
-        llm_complete: Async LLM callable (unused, kept for call-site compatibility).
+        _llm_complete: Async LLM callable (unused, kept for call-site compatibility).
 
     Returns:
         Dict with all WritingProfile fields: tone, sentence_length, first_person,
@@ -95,12 +95,12 @@ async def extract_style_fields(content: str, llm_complete) -> dict[str, Any]:
     if not content or not content.strip():
         return {}
 
-    from backend.llm.router import llm_complete as _cached_complete
+    from backend.llm.router import llm_complete
 
     prompt = STYLE_EXTRACTION_PROMPT.format(content=content[:3000])  # cap at 3000 chars
 
     try:
-        response = await _cached_complete(prompt, system="", agent_role=None)
+        response = await llm_complete(prompt, system="", agent_role=None)
     except Exception:
         return {}
 
