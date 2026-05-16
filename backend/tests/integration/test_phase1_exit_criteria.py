@@ -212,12 +212,14 @@ class TestLangGraphCheckpointerResume:
 class TestTaskStoresEpisodicOnCompletion:
     """Verify EpisodicMemoryEntry written to PGLite on task completion."""
 
-    def test_task_stores_episodic_on_completion(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_task_stores_episodic_on_completion(self, tmp_path):
         """Task completion writes an EpisodicMemory record to PGLite."""
         from backend.memory.episodic import EpisodicMemory, EpisodicMemoryStore
 
         db_path = str(tmp_path / "test_task.db")
         store = EpisodicMemoryStore(db_path=db_path)
+        await store.start()
 
         task_id = str(uuid.uuid4())
         project_id = "test-project"
@@ -232,12 +234,14 @@ class TestTaskStoresEpisodicOnCompletion:
             outcome_status="completed",
             created_at=datetime.now(UTC),
         )
-        store.insert(record)
+        await store.insert(record)
 
-        results = store.query_by_project(project_id)
+        results = await store.query_by_project(project_id)
         assert len(results) == 1
         assert results[0].task_id == task_id
         assert results[0].outcome_status == "completed"
+
+        await store.stop()
 
 
 # --------------------------------------------------------------------------------------
@@ -657,12 +661,14 @@ class TestChromaSemanticMemory:
 class TestPgliteEpisodicMemory:
     """write_episodic + list_episodes, 180-day retention."""
 
-    def test_pglite_episodic_write_and_list(self, tmp_path):
+    @pytest.mark.asyncio
+    async def test_pglite_episodic_write_and_list(self, tmp_path):
         """Write episodic records and list them by project."""
         from backend.memory.episodic import EpisodicMemory, EpisodicMemoryStore
 
         db_path = str(tmp_path / "episodic_test.db")
         store = EpisodicMemoryStore(db_path=db_path)
+        await store.start()
 
         project_id = "test-project-ep"
         task_id = str(uuid.uuid4())
@@ -677,19 +683,23 @@ class TestPgliteEpisodicMemory:
             outcome_status="completed",
             created_at=datetime.now(UTC),
         )
-        store.insert(record)
+        await store.insert(record)
 
-        results = store.query_by_project(project_id)
+        results = await store.query_by_project(project_id)
         assert len(results) == 1
         assert results[0].summary == "Fixed authentication bug in login flow"
         assert results[0].outcome_status == "completed"
 
-    def test_pglite_episodic_180day_retention(self, tmp_path):
+        await store.stop()
+
+    @pytest.mark.asyncio
+    async def test_pglite_episodic_180day_retention(self, tmp_path):
         """Old records (>180 days) are deleted by retention policy."""
         from backend.memory.episodic import EpisodicMemory, EpisodicMemoryStore
 
         db_path = str(tmp_path / "episodic_retention.db")
         store = EpisodicMemoryStore(db_path=db_path)
+        await store.start()
 
         project_id = "retention-test"
 
@@ -703,7 +713,7 @@ class TestPgliteEpisodicMemory:
             outcome_status="completed",
             created_at=datetime.now(UTC),
         )
-        store.insert(recent)
+        await store.insert(recent)
 
         old_date = datetime.now(UTC) - timedelta(days=200)
         old = EpisodicMemory(
@@ -716,13 +726,15 @@ class TestPgliteEpisodicMemory:
             outcome_status="completed",
             created_at=old_date,
         )
-        store.insert(old)
+        await store.insert(old)
 
-        deleted = store.delete_older_than(days=180)
+        deleted = await store.delete_older_than(days=180)
         assert deleted >= 1
 
-        remaining = store.query_by_project(project_id)
+        remaining = await store.query_by_project(project_id)
         assert all(r.summary != "Old task to be purged" for r in remaining)
+
+        await store.stop()
 
 
 # --------------------------------------------------------------------------------------

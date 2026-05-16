@@ -98,11 +98,14 @@ class TestSharedMemoryStoreGracefulDegradation:
     """Test that SharedMemoryStore falls back to episodic-only when ChromaDB fails."""
 
     @pytest.fixture
-    def store(self, tmp_path, monkeypatch):
+    async def store(self, tmp_path, monkeypatch):
         """Create SharedMemoryStore with isolated DB paths."""
         db_path = str(tmp_path / "test.db")
         chroma_dir = str(tmp_path / "chroma")
-        return SharedMemoryStore(db_path=db_path, chroma_dir=chroma_dir)
+        store_instance = SharedMemoryStore(db_path=db_path, chroma_dir=chroma_dir)
+        await store_instance.start()
+        yield store_instance
+        await store_instance.stop()
 
     @pytest.mark.asyncio
     async def test_read_sets_degraded_quality_on_semantic_failure(
