@@ -22,9 +22,6 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      - run: pip install -e "backend[test]"
       - name: Create dummy .env for CI
         run: |
           cat > .env << 'EOF'
@@ -43,7 +40,7 @@ jobs:
           echo "runner.name=$RUNNER_NAME runner.os=$RUNNER_OS"
 
           echo "=== [SERVICES-START] $(date -Iseconds) ==="
-          docker compose --profile test up -d
+          docker compose --profile test up -d --build
           echo "=== [SERVICES-UP] $(date -Iseconds) ==="
 
           echo "=== [CHROMA-WAIT-START] $(date -Iseconds) ==="
@@ -60,20 +57,22 @@ jobs:
           done
 
           echo "=== [TESTS-START] $(date -Iseconds) ==="
-          # Capture test exit code immediately after pytest exits
+          # Run pytest inside the backend container (test deps already installed via Dockerfile)
+          # --workdir /app because backend/ is bind-mounted at /app/backend
           set -o pipefail
-          timeout 300 bash -c '
+          timeout 300 docker compose exec --workdir /app backend \
             pytest backend/tests/unit -q --tb=short
+          UNIT_EXIT=$?
+          timeout 300 docker compose exec --workdir /app backend \
             pytest backend/tests/integration -q --tb=short
-          '; TEST_EXIT=$?
+          INTEGRATION_EXIT=$?
           set +o pipefail
-          echo "=== [TESTS-DONE] exit=$TEST_EXIT $(date -Iseconds) ==="
+          TEST_EXIT=$((UNIT_EXIT == 0 ? INTEGRATION_EXIT : UNIT_EXIT))
+          echo "=== [TESTS-DONE] unit=$UNIT_EXIT integration=$INTEGRATION_EXIT exit=$TEST_EXIT $(date -Iseconds) ==="
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
-          # Kill containers first (instant), then docker compose down handles only volume/network removal
           docker compose --profile test kill 2>/dev/null || true
           docker container prune -f >/dev/null 2>&1 || true
-          # --timeout 5 since containers already killed; timeout wrapper guards against prune hangs
           timeout 60 docker compose --profile test down --timeout 5 --remove-orphans 2>/dev/null || true
           echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
           echo "=== [STEP-END] $(date -Iseconds) ==="
