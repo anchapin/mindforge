@@ -69,7 +69,7 @@ jobs:
 
       - name: Stop services
         if: always()
-        run: timeout 120 docker compose --profile test down --timeout 30 --remove-orphans || true
+        run: timeout 180 docker compose --profile test down --timeout 30 --remove-orphans || true
 
   build-images:
     runs-on: ubuntu-latest
