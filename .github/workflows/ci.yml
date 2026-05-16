@@ -60,17 +60,20 @@ jobs:
           done
 
           echo "=== [TESTS-START] $(date -Iseconds) ==="
-          # Capture test exit code before cleanup (|| true) can swallow it
+          # Capture test exit code immediately after pytest exits
+          set -o pipefail
           timeout 300 bash -c '
             pytest backend/tests/unit -q --tb=short
             pytest backend/tests/integration -q --tb=short
-          '
-          TEST_EXIT=$?
+          '; TEST_EXIT=$?
+          set +o pipefail
           echo "=== [TESTS-DONE] exit=$TEST_EXIT $(date -Iseconds) ==="
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
-          # Same-step cleanup: no runner reschedule = no 291s gap
-          timeout 180 docker compose --profile test down --timeout 30 --remove-orphans || true
+          # Force-kill containers + prune (avoids graceful shutdown hangs on large images)
+          docker compose --profile test kill 2>/dev/null || true
+          docker container prune -f >/dev/null 2>&1 || true
+          docker compose --profile test down --timeout 10 --remove-orphans 2>/dev/null || true
           echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
           echo "=== [STEP-END] $(date -Iseconds) ==="
 
