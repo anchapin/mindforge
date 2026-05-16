@@ -52,7 +52,8 @@ class BaseTool(ABC):
 
         if agent_identity and integration_config:
             allowed_agents = integration_config.get("allowed_agents")
-            if allowed_agents:
+            # Only skip check when not set (None). Empty list means "block all".
+            if allowed_agents is not None:
                 if isinstance(allowed_agents, str):
                     allowed_agents = json.loads(allowed_agents)
                 if agent_identity not in allowed_agents:
@@ -70,7 +71,8 @@ class BaseTool(ABC):
                     )
 
             permissions = integration_config.get("permissions")
-            if permissions:
+            # Only check permissions when explicitly set (not None, not empty dict)
+            if permissions and isinstance(permissions, dict) and permissions.get("allowed_actions") is not None:
                 if isinstance(permissions, str):
                     permissions = json.loads(permissions)
                 required_action = f"{self.name}:{action}"
