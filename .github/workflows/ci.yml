@@ -70,10 +70,11 @@ jobs:
           echo "=== [TESTS-DONE] exit=$TEST_EXIT $(date -Iseconds) ==="
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
-          # Force-kill containers + prune (avoids graceful shutdown hangs on large images)
+          # Kill containers first (instant), then docker compose down handles only volume/network removal
           docker compose --profile test kill 2>/dev/null || true
           docker container prune -f >/dev/null 2>&1 || true
-          docker compose --profile test down --timeout 10 --remove-orphans 2>/dev/null || true
+          # --timeout 5 since containers already killed; timeout wrapper guards against prune hangs
+          timeout 60 docker compose --profile test down --timeout 5 --remove-orphans 2>/dev/null || true
           echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
           echo "=== [STEP-END] $(date -Iseconds) ==="
 
