@@ -65,8 +65,8 @@ class TestAsyncSQLitePool:
         await pool.start()
 
         # Execute two queries — should reuse connections
-        await pool.execute("CREATE TABLE IF NOT EXISTS test (id TEXT PRIMARY KEY)", ())
-        await pool.execute("INSERT INTO test (id) VALUES (?)", ("test1",))
+        await pool.execute_write("CREATE TABLE IF NOT EXISTS test (id TEXT PRIMARY KEY)", ())
+        await pool.execute_write("INSERT INTO test (id) VALUES (?)", ("test1",))
 
         # Second query should work (connection still valid)
         rows = await pool.execute("SELECT * FROM test", ())
@@ -343,7 +343,7 @@ class TestNoSyncSqliteInAsyncContext:
         # Check module source doesn't have sync sqlite3 usage
         import inspect
 
-        import memory.episodic as episodic_module
+        import backend.memory.episodic as episodic_module
         source = inspect.getsource(episodic_module)
 
         # Should use aiosqlite.connect, not sqlite3.connect
@@ -354,7 +354,7 @@ class TestNoSyncSqliteInAsyncContext:
         """style.py should not import sqlite3 directly for sync operations."""
         import inspect
 
-        import memory.style as style_module
+        import backend.memory.style as style_module
         source = inspect.getsource(style_module)
 
         # Should use aiosqlite.connect, not sqlite3.connect
