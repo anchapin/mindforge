@@ -357,33 +357,27 @@ class SupervisorRunnerPool:
     def __init__(self, size: int = 2) -> None:
         self._size = size
         self._runners: list[SupervisorRunner] = []
-        self._running: list[SupervisorRunner] = []
-        self._lock = threading.Lock()
+        self._lock: asyncio.Lock = asyncio.Lock()
 
-    async def initialize(self, memory_store: SharedMemoryStore, checkpointer_path: str | None = None) -> None:
-        """Pre-compile runner instances. Call at startup."""
+    def initialize(self, memory_store: SharedMemoryStore, checkpointer_path: str | None = None) -> None:
+        """Pre-compile runner instances. Call at startup (sync)."""
         for _ in range(self._size):
             runner = SupervisorRunner(memory_store, checkpointer_path)
             self._runners.append(runner)
 
     async def acquire(self) -> SupervisorRunner:
         """Get an available runner from the pool."""
-        with self._lock:
+        async with self._lock:
             if self._runners:
-                runner = self._runners.pop()
-                self._running.append(runner)
-                return runner
+                return self._runners.pop()
             runner = SupervisorRunner.__new__(SupervisorRunner)
             runner.graph = None  # type: ignore[assignment]
             runner._memory = None  # type: ignore[assignment]
-            self._running.append(runner)
             return runner
 
     async def release(self, runner: SupervisorRunner) -> None:
         """Return a runner to the pool."""
-        with self._lock:
-            if runner in self._running:
-                self._running.remove(runner)
+        async with self._lock:
             if len(self._runners) < self._size:
                 self._runners.append(runner)
 
