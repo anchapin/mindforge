@@ -81,7 +81,7 @@ async def lifespan(app: FastAPI):
     # Initialize SupervisorRunner pool (pre-compile graphs at startup)
     try:
         from backend.agents.supervisor import get_supervisor_pool
-        from backend.memory.store import get_memory_store
+        from backend.api.deps import get_memory_store
         checkpointer_path = os.path.join(DATA_DIR, "checkpointer.db")
         pool = get_supervisor_pool()
         pool.initialize(get_memory_store(), checkpointer_path)
