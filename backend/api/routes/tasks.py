@@ -112,6 +112,21 @@ async def _execute_task(
     await ws.send_task_status_update(task_id, "running", "coo")
 
     try:
+        # Fetch integration configs for permission enforcement
+        conn = sqlite3.connect(DB_PATH)
+        conn.row_factory = sqlite3.Row
+        integration_configs: dict[str, dict] = {}
+        rows = conn.execute(
+            "SELECT app_name, allowed_agents, permissions FROM integration WHERE status = 'active'"
+        ).fetchall()
+        conn.close()
+        for row in rows:
+            import json as _json
+            integration_configs[row["app_name"]] = {
+                "allowed_agents": _json.loads(row["allowed_agents"]) if row["allowed_agents"] else [],
+                "permissions": _json.loads(row["permissions"]) if row["permissions"] else {},
+            }
+
         # Try to trigger a skill first (SPEC.md Section 2.3)
         matched_skill = await trigger_skill(description)
 
@@ -131,6 +146,8 @@ async def _execute_task(
                 task_id=task_id,
                 llm_complete=llm_router.complete,
                 tools=tools,
+                agent_identity=matched_skill.agent_role,
+                integration_configs=integration_configs,
             )
 
             # Map skill result to agent result
@@ -414,12 +431,26 @@ async def approve_task(task_id: str, payload: ApprovalRequest, db=Depends(db_dep
 
         tools = ToolRegistry()
 
+        # Fetch integration configs for permission enforcement on resume
+        import json as _json
+        integration_configs: dict[str, dict] = {}
+        rows = db.execute(
+            "SELECT app_name, allowed_agents, permissions FROM integration WHERE status = 'active'"
+        ).fetchall()
+        for row in rows:
+            integration_configs[row["app_name"]] = {
+                "allowed_agents": _json.loads(row["allowed_agents"]) if row["allowed_agents"] else [],
+                "permissions": _json.loads(row["permissions"]) if row["permissions"] else {},
+            }
+
         continue_result = await execute_skill_continue(
             ctx=skill_ctx,
             approval_action="approved",
             edited_content=payload.edited_content,
             llm_complete=llm_router.complete,
             tools=tools,
+            agent_identity=skill.agent_role,
+            integration_configs=integration_configs,
         )
 
         # Update task with the continued result

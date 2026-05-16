@@ -1,20 +1,125 @@
-"""Writing style profile CRUD.
+"""Writing style profile CRUD (async).
 
 From SPEC.md §2.2 — Writing Style Memory.
 Singleton WritingProfile stored in PGLite. Updated on explicit user request
 or extracted from approved drafts via LLM.
+
+Uses aiosqlite for non-blocking async I/O.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
-import sqlite3
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------------------
+# Connection pool
+# ---------------------------------------------------------------------------------------
+
+
+class AsyncSQLitePool:
+    """Async connection pool for SQLite using aiosqlite.
+
+    Maintains a pool of connections to avoid the overhead of creating
+    new connections for each operation.
+    """
+
+    def __init__(self, db_path: str, pool_size: int = 5):
+        self.db_path = db_path
+        self.pool_size = pool_size
+        self._pool: asyncio.Queue = asyncio.Queue(maxsize=pool_size)
+        self._started = False
+        self._lock = asyncio.Lock()
+
+    async def start(self) -> None:
+        """Initialize the connection pool."""
+        if self._started:
+            return
+        async with self._lock:
+            if self._started:
+                return
+            for _ in range(self.pool_size):
+                conn = await _ai_sqlite_connect(self.db_path)
+                await conn.execute("PRAGMA journal_mode=WAL")
+                await conn.execute("PRAGMA busy_timeout=5000")
+                await conn.execute("PRAGMA synchronous=NORMAL")
+                await self._pool.put(conn)
+            self._started = True
+            logger.info("AsyncSQLitePool started with %d connections", self.pool_size)
+
+    async def stop(self) -> None:
+        """Close all connections in the pool."""
+        if not self._started:
+            return
+        async with self._lock:
+            if not self._started:
+                return
+            while not self._pool.empty():
+                try:
+                    conn = self._pool.get_nowait()
+                    await conn.close()
+                except asyncio.QueueEmpty:
+                    break
+            self._started = False
+            logger.info("AsyncSQLitePool stopped")
+
+    @asynccontextmanager
+    async def acquire(self) -> AsyncIterator[Any]:
+        """Acquire a connection from the pool."""
+        if not self._started:
+            await self.start()
+        conn = await self._pool.get()
+        try:
+            yield conn
+        finally:
+            await self._pool.put(conn)
+
+    async def execute(self, query: str, params: tuple = ()) -> list[dict]:
+        """Execute a query and return all rows as dicts."""
+        async with self.acquire() as conn:
+            conn.row_factory = _dict_row_factory
+            cursor = await conn.execute(query, params)
+            rows = await cursor.fetchall()
+            return rows
+
+    async def execute_one(self, query: str, params: tuple = ()) -> dict | None:
+        """Execute a query and return a single row as dict."""
+        async with self.acquire() as conn:
+            conn.row_factory = _dict_row_factory
+            cursor = await conn.execute(query, params)
+            row = await cursor.fetchone()
+            return row if row else None
+
+    async def execute_write(self, query: str, params: tuple = ()) -> int:
+        """Execute a write query and return rowcount."""
+        async with self.acquire() as conn:
+            cursor = await conn.execute(query, params)
+            await conn.commit()
+            return cursor.rowcount
+
+
+# aiosqlite types
+ai_sqlite_Connection = Any  # aiosqlite.Connection
+
+
+async def _ai_sqlite_connect(db_path: str) -> ai_sqlite_Connection:
+    """Connect to SQLite using aiosqlite for async operations."""
+    import aiosqlite
+    return await aiosqlite.connect(db_path)
+
+
+def _dict_row_factory(cursor: Any, row: tuple) -> dict:
+    """Convert a sqlite row to a dict using column names."""
+    return dict(zip(cursor.column_names, row, strict=True))
+
 
 # ---------------------------------------------------------------------------------------
 # Data model
@@ -35,8 +140,8 @@ class WritingProfile:
     updated_at: datetime = field(default_factory=datetime.utcnow)
 
     @classmethod
-    def from_row(cls, row: sqlite3.Row) -> WritingProfile:
-        """Deserialize from a sqlite3.Row."""
+    def from_row(cls, row: dict) -> WritingProfile:
+        """Deserialize from a dict (from async sqlite query)."""
         data = dict(row)
         # signature_phrases stored as JSON string
         if isinstance(data.get("signature_phrases"), str):
@@ -163,7 +268,7 @@ WRITING_PROFILE_DEFAULTS: dict[str, Any] = {
 
 
 class WritingProfileStore:
-    """CRUD operations for the WritingProfile singleton.
+    """CRUD operations for the WritingProfile singleton (async).
 
     PGLite (SQLite-compatible) schema must contain a writing_profile table:
       CREATE TABLE IF NOT EXISTS writing_profile (
@@ -176,17 +281,34 @@ class WritingProfileStore:
           signoff_style  TEXT NOT NULL DEFAULT 'Cheers',
           updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
       );
+
+    All public methods are async and use a connection pool for non-blocking I/O.
     """
 
     _SINGLETON_ID = "default"
 
-    def __init__(self, db_path: str | None = None):
+    def __init__(self, db_path: str | None = None, pool_size: int = 5):
         self.db_path = db_path or ":memory:"
-        self._ensure_schema()
+        self._pool = AsyncSQLitePool(self.db_path, pool_size=pool_size)
+        self._started = False
 
-    def _ensure_schema(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute("""
+    async def start(self) -> None:
+        """Initialize the connection pool and schema."""
+        if self._started:
+            return
+        self._started = True
+        await self._pool.start()
+        await self._ensure_schema()
+
+    async def stop(self) -> None:
+        """Stop the connection pool."""
+        await self._pool.stop()
+        self._started = False
+
+    async def _ensure_schema(self) -> None:
+        """Create table and ensure singleton row exists."""
+        async with self._pool.acquire() as conn:
+            await conn.execute("""
                 CREATE TABLE IF NOT EXISTS writing_profile (
                     id                  TEXT PRIMARY KEY,
                     tone                TEXT NOT NULL DEFAULT 'semi-formal',
@@ -199,32 +321,31 @@ class WritingProfileStore:
                 )
             """)
             # Ensure singleton row exists
-            exists = conn.execute(
+            row = await conn.execute(
                 "SELECT 1 FROM writing_profile WHERE id = ?", (self._SINGLETON_ID,)
-            ).fetchone()
-            if not exists:
-                conn.execute(
+            )
+            result = await row.fetchone()
+            if not result:
+                await conn.execute(
                     "INSERT INTO writing_profile (id) VALUES (?)",
                     (self._SINGLETON_ID,),
                 )
-            conn.commit()
+            await conn.commit()
 
-    def get(self) -> WritingProfile:
+    async def get(self) -> WritingProfile:
         """Load the singleton writing profile."""
-        with sqlite3.connect(self.db_path) as conn:
-            conn.row_factory = sqlite3.Row
-            row = conn.execute(
+        row = await self._pool.execute_one(
+            "SELECT * FROM writing_profile WHERE id = ?", (self._SINGLETON_ID,)
+        )
+        if not row:
+            # Recreate if missing
+            await self._ensure_schema()
+            row = await self._pool.execute_one(
                 "SELECT * FROM writing_profile WHERE id = ?", (self._SINGLETON_ID,)
-            ).fetchone()
-            if not row:
-                # Recreate if missing
-                self._ensure_schema()
-                row = conn.execute(
-                    "SELECT * FROM writing_profile WHERE id = ?", (self._SINGLETON_ID,)
-                ).fetchone()
-            return WritingProfile.from_row(row)
+            )
+        return WritingProfile.from_row(row)
 
-    def update_style(self, updates: dict[str, Any]) -> WritingProfile:
+    async def update_style(self, updates: dict[str, Any]) -> WritingProfile:
         """Update style fields from a dict (partial update supported)."""
         valid_fields = {
             "tone",
@@ -244,29 +365,27 @@ class WritingProfileStore:
         set_clause = ", ".join(f"{k} = ?" for k in filtered)
         values = list(filtered.values()) + [self._SINGLETON_ID]
 
-        with sqlite3.connect(self.db_path) as conn:
-            conn.execute(
-                f"UPDATE writing_profile SET {set_clause} WHERE id = ?",
-                values,
-            )
-            conn.commit()
+        await self._pool.execute_write(
+            f"UPDATE writing_profile SET {set_clause} WHERE id = ?",
+            tuple(values),
+        )
 
-        return self.get()
+        return await self.get()
 
-    def reset(self) -> WritingProfile:
+    async def reset(self) -> WritingProfile:
         """Reset the singleton writing profile to spec defaults (#53).
 
         Idempotent -- callable on a missing-row state since update_style()
         flows through _ensure_schema() on the next call.
         """
-        return self.update_style(WRITING_PROFILE_DEFAULTS)
+        return await self.update_style(WRITING_PROFILE_DEFAULTS)
 
-    def format(self) -> str:
+    async def format(self) -> str:
         """Render the profile as a style guide string for prompt injection.
 
         This is the text injected into agent system prompts so they write in the user's voice.
         """
-        p = self.get()
+        p = await self.get()
         greeting_note = '(never "Hey" or "Dear")' if "Hi" in p.greeting_style else ""
         signoff_note = '(never "Best" or "Thanks")' if p.signoff_style != "Best" else ""
 

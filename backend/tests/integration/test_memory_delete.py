@@ -146,8 +146,49 @@ class _StubSemantic:
         return record_id in self._records
 
 
+class _SyncEpisodicShim:
+    """Sync wrapper that forwards async episodic methods via run_until_complete."""
+
+    def __init__(self, store):
+        self._store = store
+
+    def get_task_id(self, record_id):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(self._store.get_task_id(record_id))
+
+    def count_dependent_steps(self, task_id):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(self._store.count_dependent_steps(task_id))
+
+    def delete_dependent_steps(self, task_id):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(self._store.delete_dependent_steps(task_id))
+
+    def delete(self, record_id):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(self._store.delete(record_id))
+
+
+class _SyncStyleShim:
+    """Sync wrapper that forwards async style methods via run_until_complete."""
+
+    def __init__(self, store):
+        self._store = store
+
+    def get(self):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(self._store.get())
+
+    def reset(self):
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(self._store.reset())
+
+
 class _StubStore:
-    """Just enough surface for the deletion routes."""
+    """Just enough surface for the deletion routes.
+
+    Provides sync shims for async store methods so tests work without changes.
+    """
 
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -159,6 +200,35 @@ class _StubStore:
 
         self._episodic = EpisodicMemoryStore(db_path=db_path)
         self._style = WritingProfileStore(db_path=db_path)
+        self._started = False
+
+    async def start(self) -> None:
+        """Initialize the async stores."""
+        if self._started:
+            return
+        self._started = True
+        await self._episodic.start()
+        await self._style.start()
+
+    async def stop(self) -> None:
+        """Stop the async stores."""
+        if not self._started:
+            return
+        self._started = False
+        await self._episodic.stop()
+        await self._style.stop()
+
+    # Expose sync wrappers as properties so routes (which call async methods directly)
+    # work with our async stores via run_until_complete
+    @property
+    def episodic(self):
+        """Sync-compatible episodic accessor for routes that haven't migrated yet."""
+        return _SyncEpisodicShim(self._episodic)
+
+    @property
+    def style(self):
+        """Sync-compatible style accessor for routes that haven't migrated yet."""
+        return _SyncStyleShim(self._style)
 
 
 # ---------------------------------------------------------------------------
@@ -182,7 +252,10 @@ def db_path() -> Iterator[str]:
 
 @pytest.fixture
 def store(db_path) -> _StubStore:
-    return _StubStore(db_path)
+    stub = _StubStore(db_path)
+    import asyncio
+    asyncio.get_event_loop().run_until_complete(stub.start())
+    return stub
 
 
 @pytest.fixture
@@ -332,7 +405,7 @@ class TestStyleReset:
     ) -> None:
         # Seed a customized profile
         _seed_profile(db_path, tone="playful", sentence_length="long", signoff_style="Ciao")
-        before = store._style.get().to_dict()
+        before = store.style.get().to_dict()
         assert before["tone"] == "playful"
         assert before["signoff_style"] == "Ciao"
 
@@ -341,7 +414,7 @@ class TestStyleReset:
         body = resp.json()
         assert body["reset"] is True
         # GET /style should now return the spec defaults
-        defaults = store._style.get().to_dict()
+        defaults = store.style.get().to_dict()
         assert defaults["tone"] == "semi-formal"
         assert defaults["sentence_length"] == "medium"
         assert defaults["first_person"] == "I"

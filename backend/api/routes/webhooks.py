@@ -72,10 +72,11 @@ def _get_task_db():
     return _get_db()
 
 
-def _log_to_episodic(event_type: str, payload: dict, source: str = "stripe") -> None:
-    """Log a webhook event to episodic memory (synchronous, direct insert)."""
+async def _log_to_episodic(event_type: str, payload: dict, source: str = "stripe") -> None:
+    """Log a webhook event to episodic memory (async)."""
     try:
         store = SharedMemoryStore()
+        await store.start()
         record_id = f"ep_{int(time.time() * 1000)}"
         now = datetime.now(UTC)
         record = EpisodicMemory(
@@ -89,7 +90,7 @@ def _log_to_episodic(event_type: str, payload: dict, source: str = "stripe") -> 
             feedback=json.dumps(payload),
             created_at=now,
         )
-        store._episodic.insert(record)
+        await store._episodic.insert(record)
         logger.debug("Logged stripe webhook to episodic: %s", event_type)
     except Exception as exc:
         logger.warning("Failed to log stripe webhook to episodic memory: %s", exc)
@@ -137,8 +138,8 @@ async def stripe_webhook(request: Request) -> dict:
 
     logger.info("Stripe webhook received: event_id=%s type=%s", event_id, event_type)
 
-    # Always log to episodic memory (sync, non-blocking)
-    _log_to_episodic(
+    # Always log to episodic memory (async)
+    await _log_to_episodic(
         event_type=f"stripe_webhook:{event_type}",
         payload=event,
         source="stripe",

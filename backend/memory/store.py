@@ -11,12 +11,15 @@ Key principles:
   - Semantic writes call sanitize_for_memory() first (§3b.8 Layer 1)
   - Semantic reads verify HMAC and exclude tampered entries
   - classify_task_type() keyword rules scope episodic retrieval
+
+All SQLite operations use aiosqlite via async connection pools for non-blocking I/O.
 """
 
 from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
@@ -105,6 +108,58 @@ class _WriteItem:
 
 
 # ---------------------------------------------------------------------------------------
+# Circuit breaker for downstream failures
+# ---------------------------------------------------------------------------------------
+
+
+class WriteCircuitBreaker:
+    """Circuit breaker for downstream memory store failures.
+
+    Tracks consecutive failures per memory type (semantic/episodic/style).
+    After max_failures, the circuit opens for circuit_timeout seconds,
+    preventing further requests to the failing store.
+    """
+
+    FAILURE_THRESHOLD = 5
+    RECOVERY_TIMEOUT = 60.0  # seconds
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        self.failure_count = 0
+        self._open_at: float | None = None
+        self._lock = asyncio.Lock()
+
+    @property
+    def is_open(self) -> bool:
+        """Check if circuit is currently open (tripped)."""
+        if self._open_at is None:
+            return False
+        if time.monotonic() - self._open_at >= self.RECOVERY_TIMEOUT:
+            # Timeout expired — try to close the circuit
+            self._open_at = None
+            self.failure_count = 0
+            return False
+        return True
+
+    async def record_failure(self) -> None:
+        """Record a failure and potentially trip the circuit."""
+        async with self._lock:
+            self.failure_count += 1
+            if self.failure_count >= self.FAILURE_THRESHOLD:
+                self._open_at = time.monotonic()
+
+    async def record_success(self) -> None:
+        """Reset on successful call."""
+        async with self._lock:
+            self.failure_count = 0
+            self._open_at = None
+
+    async def can_execute(self) -> bool:
+        """Check if execution is allowed (not blocked by open circuit)."""
+        return not self.is_open
+
+
+# ---------------------------------------------------------------------------------------
 # Write queue metrics
 # ---------------------------------------------------------------------------------------
 
@@ -118,6 +173,8 @@ class WriteQueueMetrics:
     writes_dropped: int = 0
     writes_failed: int = 0
     watermark_warnings: int = 0
+    circuit_trips: int = 0  # number of times circuit breaker tripped
+    circuit_recoveries: int = 0  # number of times circuit recovered
 
     _lock: Lock = field(default_factory=Lock)
 
@@ -141,6 +198,14 @@ class WriteQueueMetrics:
         with self._lock:
             self.watermark_warnings += 1
 
+    def record_circuit_trip(self) -> None:
+        with self._lock:
+            self.circuit_trips += 1
+
+    def record_circuit_recovery(self) -> None:
+        with self._lock:
+            self.circuit_recoveries += 1
+
     def to_dict(self) -> dict[str, int]:
         with self._lock:
             return {
@@ -149,6 +214,8 @@ class WriteQueueMetrics:
                 "writes_dropped": self.writes_dropped,
                 "writes_failed": self.writes_failed,
                 "watermark_warnings": self.watermark_warnings,
+                "circuit_trips": self.circuit_trips,
+                "circuit_recoveries": self.circuit_recoveries,
             }
 
 
@@ -165,11 +232,13 @@ class SharedMemoryStore:
 
     Architecture:
       - Semantic  → ChromaDB via self._semantic
-      - Episodic   → PGLite  via self._episodic
-      - Style      → PGLite  via self._style
+      - Episodic   → PGLite  via self._episodic (async aiosqlite)
+      - Style      → PGLite  via self._style (async aiosqlite)
 
     Write path: enqueued to self._write_queue → background worker processes
                 with deduplication (24h lookback).
+
+    All SQLite operations use async connection pools for non-blocking I/O.
     """
 
     def __init__(
@@ -178,10 +247,11 @@ class SharedMemoryStore:
         chroma_dir: str | None = None,
         chroma_host: str | None = None,
         dedup_lookback_hours: int = 24,
+        sqlite_pool_size: int = 5,
     ):
         self._semantic = SemanticMemory(chroma_dir=chroma_dir, chroma_host=chroma_host)
-        self._episodic = EpisodicMemoryStore(db_path=db_path)
-        self._style = WritingProfileStore(db_path=db_path)
+        self._episodic = EpisodicMemoryStore(db_path=db_path, pool_size=sqlite_pool_size)
+        self._style = WritingProfileStore(db_path=db_path, pool_size=sqlite_pool_size)
         self._dedup_hours = dedup_lookback_hours
 
         # Bounded async write queue with backpressure
@@ -195,25 +265,42 @@ class SharedMemoryStore:
         # Track if we've logged watermark warning (reset on drain)
         self._watermark_logged = False
 
+        # Circuit breakers per memory type for downstream failure handling
+        self._circuit_breakers: dict[str, WriteCircuitBreaker] = {
+            "semantic": WriteCircuitBreaker("semantic"),
+            "episodic": WriteCircuitBreaker("episodic"),
+            "style": WriteCircuitBreaker("style"),
+        }
+
     # ---------------------------------------------------------------------------
     # Lifecycle
     # ---------------------------------------------------------------------------
 
     async def start(self) -> None:
-        """Start the background write worker. Call once at startup."""
+        """Start the memory stores and background write worker. Call once at startup."""
         if self._started:
             return
         self._started = True
+
+        # Start async SQLite stores
+        await self._episodic.start()
+        await self._style.start()
+
+        # Start write worker
         self._write_worker_task = asyncio.create_task(self._process_writes())
-        logger.info("SharedMemoryStore write worker started")
+        logger.info("SharedMemoryStore started with async SQLite pools")
 
     async def stop(self) -> None:
-        """Stop the write worker gracefully."""
+        """Stop the write worker and SQLite connection pools gracefully."""
         if self._write_worker_task:
             self._write_queue.put_nowait(None)  # sentinel
             await self._write_worker_task
-            self._started = False
-            logger.info("SharedMemoryStore write worker stopped")
+
+        await self._episodic.stop()
+        await self._style.stop()
+
+        self._started = False
+        logger.info("SharedMemoryStore stopped")
 
     # ---------------------------------------------------------------------------
     # Read path
@@ -276,15 +363,15 @@ class SharedMemoryStore:
                     )
                 )
 
-        # Episodic layer
+        # Episodic layer (async)
         if "episodic" in memory_types:
-            episodic_records: list[EpisodicMemory] = self._episodic.query_by_project(
+            episodic_records: list[EpisodicMemory] = await self._episodic.query_by_project(
                 project_id=project_id,
                 task_type=task_type,
                 limit=top_k,
             )
             if not episodic_records:
-                episodic_records = self._episodic.query_by_project(
+                episodic_records = await self._episodic.query_by_project(
                     project_id=project_id,
                     limit=top_k,
                 )
@@ -297,9 +384,9 @@ class SharedMemoryStore:
                 )
             )
 
-        # Style layer
+        # Style layer (async)
         if "style" in memory_types:
-            formatted = self._style.format()
+            formatted = await self._style.format()
             results.append(
                 MemoryResult(
                     memory_type="style",
@@ -422,17 +509,31 @@ class SharedMemoryStore:
 
     async def write_episodic(self, record: EpisodicMemory) -> None:
         """Direct (non-queued) episodic write."""
-        self._episodic.insert(record)
+        await self._episodic.insert(record)
 
     async def _process_writes(self) -> None:
-        """Background worker: processes write queue with deduplication.
+        """Background worker: processes write queue with circuit breaker protection.
 
         Tracks completed writes and resets watermark warning when queue drains.
+        Circuit breaker trips after consecutive failures to prevent cascade to downstream.
         """
         while True:
             item = await self._write_queue.get()
             if item is None:
                 break
+
+            # Check circuit breaker before executing
+            cb = self._circuit_breakers.get(item.memory_type)
+            if cb and await cb.can_execute() is False:
+                logger.warning(
+                    "Circuit breaker open for %s, skipping write. "
+                    "Will retry after recovery timeout.",
+                    item.memory_type,
+                )
+                self._metrics.record_failed()
+                self._write_queue.task_done()
+                continue
+
             try:
                 if item.memory_type == "semantic":
                     await self.write_semantic(
@@ -443,16 +544,37 @@ class SharedMemoryStore:
                     )
                 elif item.memory_type == "episodic":
                     record = EpisodicMemory(**item.content)
-                    self._episodic.insert(record)
+                    await self._episodic.insert(record)
                 elif item.memory_type == "style":
-                    self._style.update_style(item.content)
+                    await self._style.update_style(item.content)
                 else:
                     logger.warning("Unknown memory_type in write queue: %s", item.memory_type)
             except Exception as exc:
                 logger.error("Error processing memory write: %s", exc)
                 self._metrics.record_failed()
+                if cb:
+                    await cb.record_failure()
+                    if cb.is_open:
+                        self._metrics.record_circuit_trip()
+                        logger.error(
+                            "Circuit breaker tripped for %s after %d consecutive failures. "
+                            "Writes to this memory type will be skipped for %.0f seconds.",
+                            item.memory_type,
+                            WriteCircuitBreaker.FAILURE_THRESHOLD,
+                            WriteCircuitBreaker.RECOVERY_TIMEOUT,
+                        )
             else:
                 self._metrics.record_completed()
+                if cb:
+                    await cb.record_success()
+                    # Check if circuit just recovered
+                    if cb.failure_count == 0 and not cb.is_open:
+                        if self._metrics.circuit_trips > 0:
+                            self._metrics.record_circuit_recovery()
+                            logger.info(
+                                "Circuit breaker recovered for %s, resuming writes.",
+                                item.memory_type,
+                            )
             finally:
                 self._write_queue.task_done()
 
@@ -464,21 +586,24 @@ class SharedMemoryStore:
     # Style
     # ---------------------------------------------------------------------------
 
-    def get_writing_profile(self) -> WritingProfileStore:
-        return self._style
+    async def get_writing_profile(self) -> dict[str, Any]:
+        """Get the writing profile as a dict."""
+        return (await self._style.get()).to_dict()
 
-    def update_writing_style(self, updates: dict[str, Any]) -> None:
-        self._style.update_style(updates)
+    async def update_writing_style(self, updates: dict[str, Any]) -> None:
+        await self._style.update_style(updates)
         logger.info("Writing style profile updated: %s", list(updates.keys()))
 
     # ---------------------------------------------------------------------------
     # Management
     # ---------------------------------------------------------------------------
 
-    def delete_all_memories(self) -> dict[str, int]:
-        episodic_count = self._episodic.delete_older_than(days=0) or 0
+    async def delete_all_memories(self) -> dict[str, int]:
+        episodic_count = await self._episodic.delete_older_than(days=0)
+        if episodic_count is None:
+            episodic_count = 0
         semantic_count = self._semantic.delete_all()
-        self._style.update_style(
+        await self._style.update_style(
             {
                 "tone": "semi-formal",
                 "sentence_length": "medium",
@@ -490,8 +615,8 @@ class SharedMemoryStore:
         )
         return {"episodic_deleted": episodic_count, "semantic_deleted": semantic_count}
 
-    def episodic_count(self, project_id: str | None = None) -> int:
-        records = self._episodic.query_by_project(project_id=project_id, limit=1000)
+    async def episodic_count(self, project_id: str | None = None) -> int:
+        records = await self._episodic.query_by_project(project_id=project_id, limit=1000)
         return len(records)
 
     def semantic_count(self, project_id: str | None = None) -> int:
@@ -504,3 +629,18 @@ class SharedMemoryStore:
         metrics["queue_maxsize"] = WRITE_QUEUE_MAXSIZE
         metrics["queue_fill_ratio"] = float(self._write_queue.qsize()) / WRITE_QUEUE_MAXSIZE
         return metrics
+
+    # ---------------------------------------------------------------------------
+    # Legacy sync accessors (for backward compatibility with existing routes)
+    # These are temporary shims to ease migration — do not use in new code.
+    # ---------------------------------------------------------------------------
+
+    @property
+    def episodic_store(self) -> EpisodicMemoryStore:
+        """Sync accessor for code that hasn't been migrated yet."""
+        return self._episodic
+
+    @property
+    def style_store(self) -> WritingProfileStore:
+        """Sync accessor for code that hasn't been migrated yet."""
+        return self._style

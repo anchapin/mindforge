@@ -70,5 +70,11 @@ async def db_dep() -> AsyncIterator[sqlite3.Connection]:
 
 
 async def memory_dep() -> SharedMemoryStore:
-    """FastAPI dependency that provides the shared memory store singleton."""
-    return get_memory_store()
+    """FastAPI dependency that provides the shared memory store singleton.
+
+    Initializes the store's async resources on first access.
+    """
+    store = get_memory_store()
+    if not store._started:
+        await store.start()
+    return store

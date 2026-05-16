@@ -67,6 +67,17 @@ async def lifespan(app: FastAPI):
         app.state.components["tool_registry"] = "failed"
         # RECOVERABLE — continue without auto-registration
 
+    # Initialize SharedMemoryStore (async SQLite pools for episodic + style memory)
+    try:
+        from backend.memory.store import SharedMemoryStore
+        memory_store = SharedMemoryStore()
+        await memory_store.start()
+        app.state.components["memory_store"] = "ok"
+    except Exception as exc:
+        logger.warning("memory_store_init_failed", exc=str(exc))
+        app.state.components["memory_store"] = "failed"
+        # RECOVERABLE — continue without memory store
+
     # Initialize Temporal (Phase 3 — gated by ENABLE_TEMPORAL env var; stays in
     # stub mode when disabled so the rest of the API still serves requests).
     try:
@@ -83,6 +94,10 @@ async def lifespan(app: FastAPI):
     logger.info("shutdown_initiated")
     if hasattr(app.state, "temporal"):
         await app.state.temporal.shutdown()
+    if hasattr(app.state, "components") and app.state.components.get("memory_store") == "ok":
+        from backend.memory.store import SharedMemoryStore
+        store = SharedMemoryStore()
+        await store.stop()
     logger.info("shutdown_complete")
 
 
