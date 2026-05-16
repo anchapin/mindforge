@@ -27,6 +27,7 @@ from typing import Any
 from .episodic import EpisodicMemory, EpisodicMemoryStore
 from .semantic import SemanticMemory
 from .style import WritingProfileStore
+from ..agents.routing import classify_task_type
 
 logger = logging.getLogger(__name__)
 
@@ -34,33 +35,6 @@ logger = logging.getLogger(__name__)
 WRITE_QUEUE_MAXSIZE = 1000
 WRITE_QUEUE_HIGH_WATERMARK = 0.75  # 75% capacity triggers warning
 WRITE_QUEUE_DROP_POLICY = "drop_oldest"  # "drop_oldest" | "raise"
-
-# ---------------------------------------------------------------------------------------
-# Task type classification (keyword-based, no LLM)
-# ---------------------------------------------------------------------------------------
-
-TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
-    ("github", ["github", "commit", "pr ", "pull request", "repository", "git", "branch"]),
-    ("email", ["email", "reply", "inbox", "mail", "send", "draft", "message"]),
-    ("research", ["research", "find", "lookup", "analyze", "competitor", "market", "data"]),
-    ("content", ["write", "blog", "post", "tweet", "linkedin", "content", "copy", "draft"]),
-    ("finance", ["refund", "invoice", "billing", "stripe", "revenue", "cost", "payment"]),
-    ("engineering", ["code", "deploy", "build", "debug", "test", "ship", "api", "bug"]),
-    ("operations", ["schedule", "calendar", "meeting", "task", "project", "coordinate"]),
-]
-
-
-def classify_task_type(query: str) -> str:
-    """Determine task type from query using keyword matching.
-
-    Deterministic, zero latency, zero cost.
-    Returns the first matching task type, or "general".
-    """
-    for task_type, keywords in TASK_TYPE_RULES:
-        if any(kw in query.lower() for kw in keywords):
-            return task_type
-    return "general"
-
 
 # ---------------------------------------------------------------------------------------
 # Memory result container
