@@ -243,14 +243,24 @@ class SemanticMemory:
             ids.append(record_id)
 
         if ids:
-            self._collection.add(
-                ids=ids,
-                documents=texts,
-                embeddings=embeddings,  # type: ignore[arg-type]
-                metadatas=metadatas,  # type: ignore[arg-type]
-            )
-            # Rebuild BM25 index so it's ready for next retrieval
-            self.build_bm25_index(project_id=project_id)
+            try:
+                self._collection.add(
+                    ids=ids,
+                    documents=texts,
+                    embeddings=embeddings,  # type: ignore[arg-type]
+                    metadatas=metadatas,  # type: ignore[arg-type]
+                )
+            except Exception as exc:
+                logger.warning(
+                    "ChromaDB add failed, data not persisted (degraded mode): %s",
+                    exc,
+                )
+                self._set_degraded()
+                return []
+            try:
+                self.build_bm25_index(project_id=project_id)
+            except Exception as exc:
+                logger.warning("BM25 index rebuild failed: %s", exc)
 
         logger.debug("Added %d semantic memory chunks (project_id=%s)", len(ids), project_id)
         return ids
@@ -472,37 +482,56 @@ class SemanticMemory:
     # ---------------------------------------------------------------------------
 
     def count(self, project_id: str | None = None) -> int:
-        """Count records, optionally scoped to project."""
+        """Count records, optionally scoped to project. Returns 0 if ChromaDB unavailable."""
         where: dict[str, Any] = {}
         if project_id is not None:
             where["project_id"] = project_id
-        results = self._collection.get(where=where if where else None)
-        return len(results.get("ids", []))
+        try:
+            results = self._collection.get(where=where if where else None)
+            return len(results.get("ids", []))
+        except Exception as exc:
+            logger.warning("ChromaDB count failed (degraded mode): %s", exc)
+            self._set_degraded()
+            return 0
 
     def delete(self, record_ids: str | list[str]) -> None:
-        """Delete records by ID (single or list)."""
+        """Delete records by ID (single or list). Silently fails if ChromaDB unavailable."""
         if isinstance(record_ids, str):
             record_ids = [record_ids]
         if record_ids:
-            self._collection.delete(ids=record_ids)
-            self._bm25_index = None
+            try:
+                self._collection.delete(ids=record_ids)
+                self._bm25_index = None
+            except Exception as exc:
+                logger.warning("ChromaDB delete failed (degraded mode): %s", exc)
+                self._set_degraded()
 
     def delete_by_project(self, project_id: str) -> int:
-        """Delete all records for a project. Returns count deleted."""
-        results = self._collection.get(
-            where={"project_id": project_id},
-        )
-        ids = results.get("ids", [])
-        if ids:
-            self._collection.delete(ids=ids)
-            self._bm25_index = None
-        return len(ids)
+        """Delete all records for a project. Returns count deleted. Returns 0 if unavailable."""
+        try:
+            results = self._collection.get(
+                where={"project_id": project_id},
+            )
+            ids = results.get("ids", [])
+            if ids:
+                self._collection.delete(ids=ids)
+                self._bm25_index = None
+            return len(ids)
+        except Exception as exc:
+            logger.warning("ChromaDB delete_by_project failed (degraded mode): %s", exc)
+            self._set_degraded()
+            return 0
 
     def delete_all(self, project_id: str | None = None) -> int:
-        """Delete entire collection or scoped to project_id. Returns count deleted."""
-        if project_id is not None:
-            return self.delete_by_project(project_id)
-        count = self.count()
-        self._collection.delete(where={})
-        self._bm25_index = None
-        return count
+        """Delete entire collection or scoped to project_id. Returns count deleted. Returns 0 if unavailable."""
+        try:
+            if project_id is not None:
+                return self.delete_by_project(project_id)
+            count = self.count()
+            self._collection.delete(where={})
+            self._bm25_index = None
+            return count
+        except Exception as exc:
+            logger.warning("ChromaDB delete_all failed (degraded mode): %s", exc)
+            self._set_degraded()
+            return 0
