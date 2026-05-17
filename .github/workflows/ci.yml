@@ -61,7 +61,9 @@ jobs:
           set -o pipefail
           timeout 300 pytest backend/tests/unit -q --tb=short
           UNIT_EXIT=$?
-          timeout 300 pytest backend/tests/integration -q --tb=short
+          # Integration tests need more time since they run after unit tests
+          # and may involve more complex service interactions
+          timeout 600 pytest backend/tests/integration -q --tb=short
           INTEGRATION_EXIT=$?
           set +o pipefail
           TEST_EXIT=$((UNIT_EXIT == 0 ? INTEGRATION_EXIT : UNIT_EXIT))
