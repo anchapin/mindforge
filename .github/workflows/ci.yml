@@ -59,12 +59,21 @@ jobs:
       - name: Run unit tests
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          if timeout 300 pytest backend/tests/unit -q --tb=short; then
-            echo "=== [UNIT-TESTS-DONE] exit=0 $(date -Iseconds) ==="
+          set -o pipefail
+          # Run pytest with timeout wrapper
+          # PYTEST_EXIT will be pytest's actual exit code, not timeout's
+          timeout 300 pytest backend/tests/unit -q --tb=short
+          PYTEST_EXIT=$?
+          # If pytest exited due to timeout (124), it means pytest itself
+          # was killed before completing - this is a real failure
+          # If pytest exited 0, tests passed
+          # Any other pytest exit code is a real failure
+          if [ $PYTEST_EXIT -eq 0 ]; then
+            echo "=== [UNIT-TESTS-DONE] passed $(date -Iseconds) ==="
+            exit 0
           else
-            EXIT_CODE=$?
-            echo "=== [UNIT-TESTS-DONE] exit=$EXIT_CODE $(date -Iseconds) ==="
-            exit $EXIT_CODE
+            echo "=== [UNIT-TESTS-FAILED] exit=$PYTEST_EXIT $(date -Iseconds) ==="
+            exit $PYTEST_EXIT
           fi
 
   integration-tests:
@@ -108,9 +117,13 @@ jobs:
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
           set -o pipefail
           timeout 600 pytest backend/tests/integration -q --tb=short
-          INTEGRATION_EXIT=$?
+          PYTEST_EXIT=$?
+          if [ $PYTEST_EXIT -eq 0 ]; then
+            echo "=== [INTEGRATION-TESTS-DONE] passed $(date -Iseconds) ==="
+          else
+            echo "=== [INTEGRATION-TESTS-FAILED] exit=$PYTEST_EXIT $(date -Iseconds) ==="
+          fi
           set +o pipefail
-          echo "=== [INTEGRATION-TESTS-DONE] exit=$INTEGRATION_EXIT $(date -Iseconds) ==="
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
           docker compose --profile test kill 2>/dev/null || true
@@ -118,7 +131,7 @@ jobs:
           timeout 60 docker compose --profile test down --timeout 5 --remove-orphans 2>/dev/null || true
           echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
 
-          exit $INTEGRATION_EXIT
+          exit $PYTEST_EXIT
 
   build-images:
     runs-on: ubuntu-latest
