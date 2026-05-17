@@ -22,6 +22,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e "backend[test]"
       - name: Create dummy .env for CI
         run: |
           cat > .env << 'EOF'
@@ -36,7 +39,6 @@ jobs:
       - name: Test with diagnostics and cleanup
         run: |
           echo "=== [STEP-START] $(date -Iseconds) ==="
-          echo "github.run_id=$GITHUB_RUN_ID github.run_attempt=$GITHUB_RUN_ATTEMPT"
 
           echo "=== [SERVICES-START] $(date -Iseconds) ==="
           docker compose --profile test up -d --build
@@ -56,20 +58,14 @@ jobs:
           done
 
           echo "=== [TESTS-START] $(date -Iseconds) ==="
-          # Copy backend source into container (container runs as appuser, source is root-owned)
-          # so appuser can read the mounted files without permission errors.
-          docker compose cp backend/. backend:/app/backend/tests-unit-tmp/
-          docker compose cp backend/. backend:/app/backend/tests-integration-tmp/
           set -o pipefail
-          timeout 300 docker compose exec --user root --workdir /app backend \
-            pytest /app/backend/tests-unit-tmp -q --tb=short
-          UNIT_EXIT=$?
-          timeout 300 docker compose exec --user root --workdir /app backend \
-            pytest /app/backend/tests-integration-tmp -q --tb=short
-          INTEGRATION_EXIT=$?
+          timeout 300 bash -c '
+            pytest backend/tests/unit -q --tb=short
+            pytest backend/tests/integration -q --tb=short
+          '
+          TEST_EXIT=$?
           set +o pipefail
-          TEST_EXIT=$((UNIT_EXIT == 0 ? INTEGRATION_EXIT : UNIT_EXIT))
-          echo "=== [TESTS-DONE] unit=$UNIT_EXIT integration=$INTEGRATION_EXIT exit=$TEST_EXIT $(date -Iseconds) ==="
+          echo "=== [TESTS-DONE] exit=$TEST_EXIT $(date -Iseconds) ==="
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
           docker compose --profile test kill 2>/dev/null || true
