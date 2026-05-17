@@ -23,9 +23,10 @@ COPY --from=builder /install/lib/python3.12/site-packages /usr/local/lib/python3
 COPY --from=builder /install/bin /usr/local/bin/
 COPY backend/ /app/backend/
 
-# Test dependencies — installed in the container so CI can run pytest inside it
-# without a redundant pip install on the runner host (~175s savings per run)
-RUN pip install --no-cache-dir --prefix=/install \
+# Test dependencies — installed in the runtime stage so they're available
+# when CI runs 'docker compose exec backend pytest'
+# Using standard install (no --prefix) so binaries go to /usr/local/bin
+RUN pip install --no-cache-dir \
     pytest pytest-asyncio pytest-mock pytest-cov \
     dirty-equals hypothesis respx freezegun \
     && find /root -type d -name "__pycache__" -exec rm -rf {} + 2>/dev/null || true
