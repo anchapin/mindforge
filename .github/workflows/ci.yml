@@ -60,21 +60,12 @@ jobs:
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
           set -o pipefail
-          # Run pytest with timeout wrapper
-          # PYTEST_EXIT will be pytest's actual exit code, not timeout's
-          timeout 300 pytest backend/tests/unit -q --tb=short
+          # Use --preserve-status so timeout passes through pytest's exit code
+          # Not 124 (timeout) or timeout's own exit code
+          timeout --preserve-status 300 pytest backend/tests/unit -q --tb=short
           PYTEST_EXIT=$?
-          # If pytest exited due to timeout (124), it means pytest itself
-          # was killed before completing - this is a real failure
-          # If pytest exited 0, tests passed
-          # Any other pytest exit code is a real failure
-          if [ $PYTEST_EXIT -eq 0 ]; then
-            echo "=== [UNIT-TESTS-DONE] passed $(date -Iseconds) ==="
-            exit 0
-          else
-            echo "=== [UNIT-TESTS-FAILED] exit=$PYTEST_EXIT $(date -Iseconds) ==="
-            exit $PYTEST_EXIT
-          fi
+          echo "=== [UNIT-TESTS-EXIT] code=$PYTEST_EXIT $(date -Iseconds) ==="
+          exit $PYTEST_EXIT
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -116,13 +107,9 @@ jobs:
 
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
           set -o pipefail
-          timeout 600 pytest backend/tests/integration -q --tb=short
+          timeout --preserve-status 600 pytest backend/tests/integration -q --tb=short
           PYTEST_EXIT=$?
-          if [ $PYTEST_EXIT -eq 0 ]; then
-            echo "=== [INTEGRATION-TESTS-DONE] passed $(date -Iseconds) ==="
-          else
-            echo "=== [INTEGRATION-TESTS-FAILED] exit=$PYTEST_EXIT $(date -Iseconds) ==="
-          fi
+          echo "=== [INTEGRATION-TESTS-EXIT] code=$PYTEST_EXIT $(date -Iseconds) ==="
           set +o pipefail
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
