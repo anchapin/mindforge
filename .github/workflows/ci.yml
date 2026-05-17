@@ -18,7 +18,7 @@ jobs:
       - run: ruff check backend/ --fix
       - run: mypy backend/ --ignore-missing-imports
 
-  test:
+test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -37,7 +37,6 @@ jobs:
         run: |
           echo "=== [STEP-START] $(date -Iseconds) ==="
           echo "github.run_id=$GITHUB_RUN_ID github.run_attempt=$GITHUB_RUN_ATTEMPT"
-          echo "runner.name=$RUNNER_NAME runner.os=$RUNNER_OS"
 
           echo "=== [SERVICES-START] $(date -Iseconds) ==="
           docker compose --profile test up -d --build
@@ -57,14 +56,19 @@ jobs:
           done
 
           echo "=== [TESTS-START] $(date -Iseconds) ==="
-          # Run pytest inside the backend container (test deps already installed via Dockerfile)
-          # --workdir /app because backend/ is bind-mounted at /app/backend
+          # Run tests on the runner filesystem using the backend container's Python.
+          # Mount the runner's backend/ into the container so imports resolve correctly.
+          # Use --user root so we're not fighting appuser permissions on the bind mount.
           set -o pipefail
-          timeout 300 docker compose exec --workdir /app backend \
-            pytest backend/tests/unit -q --tb=short
+          timeout 300 docker compose exec --user root --workdir /app \
+            -v "$PWD/backend":/app/backend:ro \
+            backend \
+            pytest /app/backend/tests/unit -q --tb=short
           UNIT_EXIT=$?
-          timeout 300 docker compose exec --workdir /app backend \
-            pytest backend/tests/integration -q --tb=short
+          timeout 300 docker compose exec --user root --workdir /app \
+            -v "$PWD/backend":/app/backend:ro \
+            backend \
+            pytest /app/backend/tests/integration -q --tb=short
           INTEGRATION_EXIT=$?
           set +o pipefail
           TEST_EXIT=$((UNIT_EXIT == 0 ? INTEGRATION_EXIT : UNIT_EXIT))
