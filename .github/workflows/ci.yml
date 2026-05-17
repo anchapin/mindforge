@@ -59,13 +59,13 @@ jobs:
 
           echo "=== [TESTS-START] $(date -Iseconds) ==="
           set -o pipefail
-          timeout 300 bash -c '
-            pytest backend/tests/unit -q --tb=short
-            pytest backend/tests/integration -q --tb=short
-          '
-          TEST_EXIT=$?
+          timeout 300 pytest backend/tests/unit -q --tb=short
+          UNIT_EXIT=$?
+          timeout 300 pytest backend/tests/integration -q --tb=short
+          INTEGRATION_EXIT=$?
           set +o pipefail
-          echo "=== [TESTS-DONE] exit=$TEST_EXIT $(date -Iseconds) ==="
+          TEST_EXIT=$((UNIT_EXIT == 0 ? INTEGRATION_EXIT : UNIT_EXIT))
+          echo "=== [TESTS-DONE] unit=$UNIT_EXIT integration=$INTEGRATION_EXIT exit=$TEST_EXIT $(date -Iseconds) ==="
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
           docker compose --profile test kill 2>/dev/null || true
