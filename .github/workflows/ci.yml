@@ -18,7 +18,7 @@ jobs:
       - run: ruff check backend/ --fix
       - run: mypy backend/ --ignore-missing-imports
 
-test:
+  test:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
