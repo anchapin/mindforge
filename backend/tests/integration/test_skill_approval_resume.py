@@ -138,7 +138,8 @@ class TestSkillApprovalResume:
         continue_calls = []
 
         async def mock_execute_skill_continue(
-            ctx, approval_action, edited_content=None, llm_complete=None, tools=None
+            ctx, approval_action, edited_content=None, llm_complete=None, tools=None,
+            agent_identity=None, integration_configs=None
         ):
             continue_calls.append(
                 {
