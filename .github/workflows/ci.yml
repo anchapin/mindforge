@@ -61,6 +61,7 @@ jobs:
         run: pytest backend/tests/unit --collect-only -q
       - name: Run unit tests
         run: |
+          pip install pytest-timeout
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
           pytest backend/tests/unit -q --tb=short --timeout=300 -v
           echo "=== [UNIT-TESTS-DONE] exit=$? $(date -Iseconds) ==="
@@ -104,6 +105,7 @@ jobs:
             sleep 5
           done
 
+          pip install pytest-timeout
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
           pytest backend/tests/integration -q --tb=short --timeout=300 -v
           echo "=== [INTEGRATION-TESTS-DONE] exit=$? $(date -Iseconds) ==="
