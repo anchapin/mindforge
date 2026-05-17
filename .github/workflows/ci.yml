@@ -56,19 +56,16 @@ jobs:
           done
 
           echo "=== [TESTS-START] $(date -Iseconds) ==="
-          # Run tests on the runner filesystem using the backend container's Python.
-          # Mount the runner's backend/ into the container so imports resolve correctly.
-          # Use --user root so we're not fighting appuser permissions on the bind mount.
+          # Copy backend source into container (container runs as appuser, source is root-owned)
+          # so appuser can read the mounted files without permission errors.
+          docker compose cp backend/. backend:/app/backend/tests-unit-tmp/
+          docker compose cp backend/. backend:/app/backend/tests-integration-tmp/
           set -o pipefail
-          timeout 300 docker compose exec --user root --workdir /app \
-            -v "$PWD/backend":/app/backend:ro \
-            backend \
-            pytest /app/backend/tests/unit -q --tb=short
+          timeout 300 docker compose exec --user root --workdir /app backend \
+            pytest /app/backend/tests-unit-tmp -q --tb=short
           UNIT_EXIT=$?
-          timeout 300 docker compose exec --user root --workdir /app \
-            -v "$PWD/backend":/app/backend:ro \
-            backend \
-            pytest /app/backend/tests/integration -q --tb=short
+          timeout 300 docker compose exec --user root --workdir /app backend \
+            pytest /app/backend/tests-integration-tmp -q --tb=short
           INTEGRATION_EXIT=$?
           set +o pipefail
           TEST_EXIT=$((UNIT_EXIT == 0 ? INTEGRATION_EXIT : UNIT_EXIT))
