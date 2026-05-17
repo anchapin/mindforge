@@ -59,8 +59,13 @@ jobs:
       - name: Run unit tests
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          timeout 300 pytest backend/tests/unit -q --tb=short
-          echo "=== [UNIT-TESTS-DONE] $(date -Iseconds) ==="
+          if timeout 300 pytest backend/tests/unit -q --tb=short; then
+            echo "=== [UNIT-TESTS-DONE] exit=0 $(date -Iseconds) ==="
+          else
+            EXIT_CODE=$?
+            echo "=== [UNIT-TESTS-DONE] exit=$EXIT_CODE $(date -Iseconds) ==="
+            exit $EXIT_CODE
+          fi
 
   integration-tests:
     runs-on: ubuntu-latest
