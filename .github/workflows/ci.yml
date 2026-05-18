@@ -59,12 +59,9 @@ jobs:
           touch .env.local
       - name: Run unit tests
         run: |
-          set -e
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
           pytest backend/tests/unit --tb=short -v -x
-          echo "=== [UNIT-TESTS-DONE] $? $(date -Iseconds) ==="
-          pkill -f pytest || true
-          exit 0
+          echo "=== [UNIT-TESTS-DONE] exit=$? $(date -Iseconds) ==="
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -108,10 +105,8 @@ jobs:
           done
 
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/integration --tb=short -v --timeout=60 || true
-          echo "=== [INTEGRATION-TESTS-DONE] $? $(date -Iseconds) ==="
-          pkill -f pytest || true
-          docker compose --profile test kill 2>/dev/null || true
+          pytest backend/tests/integration --tb=short -v --timeout=60
+          echo "=== [INTEGRATION-TESTS-DONE] exit=$? $(date -Iseconds) ==="
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
           docker compose --profile test kill 2>/dev/null || true
