@@ -61,7 +61,7 @@ def _init_test_db():
             signature_phrases TEXT NOT NULL DEFAULT '[]',
             greeting_style TEXT NOT NULL DEFAULT 'Hi [Name],',
             signoff_style TEXT NOT NULL DEFAULT 'Cheers',
-            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+created_at TEXT NOT NULL DEFAULT (datetime('now')),
             updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
