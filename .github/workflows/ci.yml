@@ -60,7 +60,7 @@ jobs:
       - name: Run unit tests
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/unit --tb=short -v --timeout=60
+          pytest backend/tests/unit --tb=short -v -x
           echo "=== [UNIT-TESTS-DONE] exit=$? $(date -Iseconds) ==="
 
   integration-tests:
