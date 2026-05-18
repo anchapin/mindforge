@@ -57,8 +57,6 @@ jobs:
           LOG_LEVEL=INFO
           EOF
           touch .env.local
-      - name: Collect tests first (catch import errors early)
-        run: pytest backend/tests/unit --collect-only -q
       - name: Run unit tests
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
