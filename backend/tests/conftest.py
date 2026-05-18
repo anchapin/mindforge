@@ -213,23 +213,4 @@ def skill_approval_no_outgoing_data() -> dict:
     }
 
 
-@pytest.fixture(scope="session", autouse=True)
-def close_event_loops():
-    """Close any lingering event loops after the test session.
 
-    pytest-asyncio can leave event loops in a state that prevents proper
-    process exit in CI environments. This fixture ensures cleanup happens
-    after all tests complete.
-    """
-    yield
-    gc.collect()
-    for loop in list(asyncio.all_loops()):
-        if not loop.is_closed():
-            try:
-                loop.run_until_complete(loop.shutdown_asyncgens())
-            except Exception:
-                pass
-            try:
-                loop.close()
-            except Exception:
-                pass
