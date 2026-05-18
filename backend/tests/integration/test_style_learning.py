@@ -41,6 +41,7 @@ def _init_test_db():
         CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
             skill_id TEXT,
+            skill_version INTEGER NOT NULL DEFAULT 1,
             status TEXT NOT NULL DEFAULT 'pending',
             task_type TEXT NOT NULL DEFAULT 'general',
             project_id TEXT,
@@ -60,9 +61,28 @@ def _init_test_db():
             signature_phrases TEXT NOT NULL DEFAULT '[]',
             greeting_style TEXT NOT NULL DEFAULT 'Hi [Name],',
             signoff_style TEXT NOT NULL DEFAULT 'Cheers',
-            updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            updated_at TEXT NOT NULL DEFAULT (datetime('now'))
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS integration (
+            id TEXT PRIMARY KEY,
+            app_name TEXT NOT NULL UNIQUE,
+            auth_token_enc TEXT NOT NULL,
+            refresh_token_enc TEXT,
+            token_key_id TEXT NOT NULL DEFAULT 'local',
+            status TEXT NOT NULL DEFAULT 'active',
+            last_sync_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            extra TEXT,
+            permissions TEXT NOT NULL DEFAULT '[]',
+            allowed_agents TEXT NOT NULL DEFAULT '[]'
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_integration_app ON integration(app_name)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_integration_status ON integration(status)")
     conn.commit()
     conn.close()
 
@@ -137,7 +157,8 @@ class TestStyleLearning:
         update_style_calls = []
 
         async def mock_execute_skill_continue(
-            ctx, approval_action, edited_content=None, llm_complete=None, tools=None
+            ctx, approval_action, edited_content=None, llm_complete=None, tools=None,
+            agent_identity=None, integration_configs=None
         ):
             from datetime import datetime
 
@@ -250,7 +271,8 @@ class TestStyleLearning:
         update_style_calls = []
 
         async def mock_execute_skill_continue(
-            ctx, approval_action, edited_content=None, llm_complete=None, tools=None
+            ctx, approval_action, edited_content=None, llm_complete=None, tools=None,
+            agent_identity=None, integration_configs=None
         ):
             from datetime import datetime
 
