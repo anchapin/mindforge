@@ -65,7 +65,7 @@ jobs:
         run: |
           set -o pipefail
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/unit -q --tb=short -v -p no:term_output
+          pytest backend/tests/unit --tb=short -v -p no:term_output -s
           EXIT_CODE=$?
           pkill -P $$ 2>/dev/null || true
           echo "=== [UNIT-TESTS-DONE] exit=$EXIT_CODE $(date -Iseconds) ==="
@@ -114,7 +114,7 @@ jobs:
 
           set -o pipefail
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/integration -q --tb=short -v -p no:term_output
+          pytest backend/tests/integration --tb=short -v -p no:term_output -s
           EXIT_CODE=$?
           pkill -P $$ 2>/dev/null || true
           echo "=== [INTEGRATION-TESTS-DONE] exit=$EXIT_CODE $(date -Iseconds) ==="
