@@ -41,7 +41,7 @@ def test_startup_chroma_recoverable():
         patch("backend.main.TemporalClient") as mock_temporal_cls,
     ):
         mock_check.return_value = False
-        mock_temporal = mock_temporal_cls.value if hasattr(mock_temporal_cls, 'value') else mock_temporal_cls.return_value
+        mock_temporal = mock_temporal_cls.return_value
         mock_temporal.start = AsyncMock()
         mock_temporal.shutdown = AsyncMock()
         with (
@@ -69,7 +69,7 @@ def test_startup_tool_registry_recoverable():
         patch("backend.main.TemporalClient") as mock_temporal_cls,
     ):
         mock_check.return_value = True
-        mock_temporal = mock_temporal_cls.value if hasattr(mock_temporal_cls, 'value') else mock_temporal_cls.return_value
+        mock_temporal = mock_temporal_cls.return_value
         mock_temporal.start = AsyncMock()
         mock_temporal.shutdown = AsyncMock()
         with (

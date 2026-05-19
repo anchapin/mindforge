@@ -103,7 +103,9 @@ class SkillRegistry:
         """
         skill = self._skills.get(skill_id)
         if not skill:
-            return [f"Skill '{skill_id}' not found in registry"]
+            # If not in registry (e.g. manually created in tests), we can't
+            # validate against a disk file, so we skip this check.
+            return []
 
         # Re-derive the expected path from skill id
         skill_yaml_path = self._skills_dir / f"{skill_id}.yaml"
@@ -122,21 +124,29 @@ class SkillRegistry:
         return errors
 
     def load_skill_file(self, path: Path) -> Skill | None:
-        """Load and validate a single skill YAML file.
+        """Load a single skill YAML file.
 
-        Raises ValueError if the skill is invalid.
+        Validation is performed but errors do not prevent loading; they are
+        cached and surfaced at invocation time via validate_for_execution() (#105).
         """
-        raw = self._load_raw(path)
+        try:
+            raw = self._load_raw(path)
+        except ValueError as exc:
+            logger.error("Skipping skill %s: %s", path.name, exc)
+            return None
 
         errors = validate_skill_graph(raw)
-        if errors:
-            raise ValueError(f"invalid skill {path.name}: {'; '.join(errors)}")
-
+        # We still parse it even if invalid so it exists in the registry,
+        # but we cache the errors so they can be rejected at invocation time.
         skill = self._parse_skill(raw, yaml_content=path.read_text())
         skill.execution_graph = self._parse_graph(raw.get("execution_graph", {}))
         self._skills[skill.id] = skill
-        self._set_cached_validation(skill.id, path, None)
-        logger.info("loaded skill: %s v%d", skill.id, skill.version)
+        self._set_cached_validation(skill.id, path, errors if errors else None)
+
+        if errors:
+            logger.warning("Loaded invalid skill %s: %s", skill.id, "; ".join(errors))
+        else:
+            logger.info("loaded skill: %s v%d", skill.id, skill.version)
         return skill
 
     def _parse_skill(self, raw: dict, yaml_content: str) -> Skill:

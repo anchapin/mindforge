@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from ..memory.store import SharedMemoryStore
 import logging
+import os
 import threading
 import uuid
 from dataclasses import dataclass, field
@@ -273,11 +274,11 @@ def should_continue(state: AgentState) -> Literal["supervisor", END]:  # type: i
 # ---------------------------------------------------------------------------------------
 
 
-def build_supervisor_graph(
+async def build_supervisor_graph(
     memory_store: SharedMemoryStore,
     checkpointer_path: str | None = None,
-) -> StateGraph:  # type: ignore[return-value]
-    """Build the LangGraph supervisor workflow."""
+) -> Any:
+    """Build the LangGraph supervisor workflow (async)."""
 
     async def _specialist_async(state: AgentState) -> AgentState:
         return await specialist_node(state, memory_store)
@@ -300,43 +301,21 @@ def build_supervisor_graph(
         # Install langgraph-checkpoint-sqlite>=2.0.0,<3.0.0 and aiosqlite for async use:
         #   pip install langgraph-checkpoint-sqlite aiosqlite
         # SqliteSaver (sync) does NOT support async ainvoke() — must use AsyncSqliteSaver.
-        # We must do the async connection + compile in a sync-safe way:
         try:
-            # aiosqlite.connect() is a coroutine — resolve it at graph-building time.
-            # Since both loop.run_until_complete() and asyncio.run() fail when
-            # called from within an existing event loop (pytest async context),
-            # we run the connection in a separate daemon thread and block until
-            # it completes. This is safe for graph-building which is a
-            # synchronous operation at startup.
-            import threading
-
             import aiosqlite
             from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
 
-            conn_holder: list[aiosqlite.Connection | None] = [None]
-
-            def _connect():
-                tloop = asyncio.new_event_loop()
-                try:
-                    conn_holder[0] = tloop.run_until_complete(aiosqlite.connect(checkpointer_path))
-                finally:
-                    tloop.close()
-
-            t = threading.Thread(target=_connect, daemon=True)
-            t.start()
-            t.join()  # Block until connection is ready
-            conn = conn_holder[0]
-            assert conn is not None, "aiosqlite.connect() returned None"
+            conn = await aiosqlite.connect(checkpointer_path)
             checkpointer = AsyncSqliteSaver(conn)
-            return builder.compile(checkpointer=checkpointer)  # type: ignore[return-value]
+            return builder.compile(checkpointer=checkpointer)
         except ImportError:
             logger.warning(
                 "AsyncSqliteSaver not available, using MemorySaver (no persistence). "
                 "Install langgraph-checkpoint-sqlite>=2.0.0,<3.0.0 and aiosqlite for persistence."
             )
-            return builder.compile(checkpointer=MemorySaver())  # type: ignore[return-value]
+            return builder.compile(checkpointer=MemorySaver())
 
-    return builder.compile()  # type: ignore[return-value]
+    return builder.compile()
 
 
 # ---------------------------------------------------------------------------------------
@@ -351,42 +330,52 @@ class SupervisorRunnerPool:
     """Pool of reusable SupervisorRunner instances.
 
     Pre-compiles LangGraph graphs at startup to avoid expensive recompilation
-    on every task request. Pool size is configurable (default 2).
+    on every task request. Pool size is configurable via SUPERVISOR_POOL_SIZE (default 2).
     """
 
     def __init__(self, size: int = 2) -> None:
         self._size = size
-        self._runners: list[SupervisorRunner] = []
-        self._lock: asyncio.Lock = asyncio.Lock()
+        self._queue: asyncio.Queue[SupervisorRunner] = asyncio.Queue()
+        self._initialized = False
 
-    def initialize(self, memory_store: SharedMemoryStore, checkpointer_path: str | None = None) -> None:
-        """Pre-compile runner instances. Call at startup (sync)."""
-        for _ in range(self._size):
-            runner = SupervisorRunner(memory_store, checkpointer_path)
-            self._runners.append(runner)
+    async def initialize(
+        self, memory_store: SharedMemoryStore, checkpointer_path: str | None = None
+    ) -> None:
+        """Pre-compile runner instances. Call at startup (async)."""
+        if self._initialized:
+            return
+
+        logger.info("Initializing SupervisorRunner pool with size=%d", self._size)
+        for i in range(self._size):
+            runner = await SupervisorRunner.create(memory_store, checkpointer_path)
+            await self._queue.put(runner)
+            logger.debug("SupervisorRunner %d pre-compiled and added to pool", i + 1)
+
+        self._initialized = True
 
     async def acquire(self) -> SupervisorRunner:
-        """Get an available runner from the pool."""
-        async with self._lock:
-            if self._runners:
-                return self._runners.pop()
-            runner = SupervisorRunner.__new__(SupervisorRunner)
-            runner.graph = None  # type: ignore[assignment]
-            runner._memory = None  # type: ignore[assignment]
-            return runner
+        """Get an available runner from the pool. Blocks if none are available."""
+        if not self._initialized:
+            # This should ideally not happen if lifecycle is followed
+            logger.warning("Acquire called on uninitialized pool. Slow path: creating new runner.")
+            from backend.api.deps import get_memory_store
+
+            return await SupervisorRunner.create(get_memory_store())
+
+        return await self._queue.get()
 
     async def release(self, runner: SupervisorRunner) -> None:
         """Return a runner to the pool."""
-        async with self._lock:
-            if len(self._runners) < self._size:
-                self._runners.append(runner)
+        if self._initialized:
+            await self._queue.put(runner)
 
 
 def get_supervisor_pool() -> SupervisorRunnerPool:
     """Get the global SupervisorRunnerPool instance."""
     global _supervisor_pool
     if _supervisor_pool is None:
-        _supervisor_pool = SupervisorRunnerPool(size=2)
+        size = int(os.getenv("SUPERVISOR_POOL_SIZE", "2"))
+        _supervisor_pool = SupervisorRunnerPool(size=size)
     return _supervisor_pool
 
 
@@ -395,11 +384,21 @@ class SupervisorRunner:
 
     def __init__(
         self,
+        graph: Any,
+        memory_store: SharedMemoryStore,
+    ):
+        self.graph = graph
+        self._memory = memory_store
+
+    @classmethod
+    async def create(
+        cls,
         memory_store: SharedMemoryStore,
         checkpointer_path: str | None = None,
-    ):
-        self.graph = build_supervisor_graph(memory_store, checkpointer_path)
-        self._memory = memory_store
+    ) -> SupervisorRunner:
+        """Async factory method to create and compile a SupervisorRunner."""
+        graph = await build_supervisor_graph(memory_store, checkpointer_path)
+        return cls(graph, memory_store)
 
     async def run(
         self,
