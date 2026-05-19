@@ -234,7 +234,7 @@ class WSConnectionManager:
         """Replay missed events from history."""
         async with self._lock:
             history = list(self._history)
-        
+
         if not history:
             return
 
@@ -246,38 +246,36 @@ class WSConnectionManager:
                 last_seq,
                 history[0].get("seq"),
             )
-        
+
         replayed = 0
         for msg in history:
             msg_seq = msg.get("seq", 0)
             if msg_seq > last_seq:
                 is_msg_broadcast = msg.get("_broadcast", False)
                 msg_task_id = msg.get("task_id")
-                
+
                 # Routing logic:
                 # 1. Message was a broadcast -> everyone gets it.
                 # 2. Message was targeted to a task -> only that task client gets it.
                 # Note: Global clients currently only receive broadcasts in real-time 'send',
                 # so we match that here.
-                
+
                 should_send = False
-                if is_msg_broadcast:
+                if is_msg_broadcast or task_id and task_id == msg_task_id:
                     should_send = True
-                elif task_id and task_id == msg_task_id:
-                    should_send = True
-                
+
                 if should_send:
                     try:
                         await websocket.send_text(json.dumps(msg))
                         replayed += 1
                     except Exception:
                         break
-        
+
         if replayed > 0:
             logger.info(
-                "[WS] Replayed %d events to %s (last_seq=%d)", 
-                replayed, 
-                task_id or "global", 
+                "[WS] Replayed %d events to %s (last_seq=%d)",
+                replayed,
+                task_id or "global",
                 last_seq
             )
 
