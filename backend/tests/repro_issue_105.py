@@ -1,10 +1,9 @@
+
 import pytest
-import yaml
-from pathlib import Path
-from backend.skills.registry import SkillRegistry
+
 from backend.skills.executor import execute_skill
-from backend.skills.models import Skill
-import asyncio
+from backend.skills.registry import SkillRegistry
+
 
 class MockLLM:
     async def complete(self, prompt, system, agent_role):
@@ -29,13 +28,13 @@ execution_graph:
       goal: start
 """
     skill_file.write_text(valid_yaml)
-    
+
     registry = SkillRegistry(skills_dir=skills_dir)
     registry.load_all()
-    
+
     skill = registry.get("test-skill")
     assert skill is not None
-    
+
     # 2. Break the skill on disk (outside of API/registry) - Add a cycle
     invalid_yaml = """
 name: Test Skill
@@ -53,20 +52,20 @@ execution_graph:
       to: start
 """
     skill_file.write_text(invalid_yaml)
-    
+
     # 3. Try to execute - should ideally fail because it's re-validated
     # Currently it will likely PASS because it uses the in-memory skill object
     # which still has the old valid graph.
-    
+
     llm = MockLLM()
     # In a real scenario, we might want it to reload from disk or at least validate the file on disk.
     # The requirement says: "Validate once per skill version", "Invalidate cache on skill update",
     # "Lightweight check: only validate if YAML changed since last validation"
-    
+
     # If we want it to catch disk changes, execute_skill needs to call validate_for_execution
     # and if that fails, maybe we should also reload the skill object?
     # The AC says: "Invalid skills rejected at invocation"
-    
+
     # Let's see if we can call validate_for_execution manually first
     errors = registry.validate_for_execution("test-skill")
     # This SHOULD return errors because the file on disk changed.
@@ -80,6 +79,6 @@ execution_graph:
         llm_complete=llm.complete,
         tools=None
     )
-    
+
     assert result.status == "failed"
     assert "validation" in result.error.lower()
