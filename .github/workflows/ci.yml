@@ -111,14 +111,16 @@ jobs:
           done
 
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
-          # Run tests in background, poll for completion or timeout
           pytest backend/tests/integration -q --tb=short --timeout=60 &
           PYTEST_PID=$!
+          # Poll until done (up to 5 min) — correctly captures exit code
           for i in $(seq 1 60); do
-            kill -0 $PYTEST_PID 2>/dev/null || { wait $PYTEST_PID && echo "=== [INTEGRATION-TESTS-DONE] exit=0 $(date -Iseconds) ===" && exit 0; }
+            kill -0 $PYTEST_PID 2>/dev/null || { wait $PYTEST_PID; EXIT=$?; echo "=== [INTEGRATION-TESTS-DONE] exit=$EXIT $(date -Iseconds) ==="; exit $EXIT; }
             sleep 5
           done
-          kill -9 $PYTEST_PID 2>/dev/null && echo "=== [INTEGRATION-TESTS-TIMEOUT] ===" && exit 124
+          kill -9 $PYTEST_PID 2>/dev/null
+          echo "=== [INTEGRATION-TESTS-TIMEOUT] ==="
+          exit 124
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
           docker compose --profile test kill 2>/dev/null || true
