@@ -277,7 +277,7 @@ def should_continue(state: AgentState) -> Literal["supervisor", END]:  # type: i
 async def build_supervisor_graph(
     memory_store: SharedMemoryStore,
     checkpointer_path: str | None = None,
-) -> StateGraph:
+) -> Any:
     """Build the LangGraph supervisor workflow (async)."""
 
     async def _specialist_async(state: AgentState) -> AgentState:

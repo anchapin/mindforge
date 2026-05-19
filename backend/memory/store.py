@@ -24,10 +24,10 @@ from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
 
+from ..agents.routing import classify_task_type
 from .episodic import EpisodicMemory, EpisodicMemoryStore
 from .semantic import SemanticMemory
 from .style import WritingProfileStore
-from ..agents.routing import classify_task_type
 
 logger = logging.getLogger(__name__)
 
