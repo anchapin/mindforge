@@ -59,8 +59,8 @@ async def check_pglite() -> bool:
         finally:
             conn.close()
         return True
-    except Exception as exc:
-        logger.warning("PGLite health check failed: %s", exc)
+    except Exception:
+        logger.warning("PGLite health check failed", exc_info=True)
         return False
 
 
@@ -70,8 +70,8 @@ async def check_chroma() -> bool:
         async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT) as client:
             resp = await client.get(_chroma_heartbeat_url())
             return resp.status_code == 200
-    except Exception as exc:
-        logger.debug("Chroma health check failed: %s", exc)
+    except Exception:
+        logger.debug("Chroma health check failed", exc_info=True)
         return False
 
 
@@ -81,8 +81,8 @@ async def check_temporal() -> bool:
         async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT) as client:
             resp = await client.get(_temporal_health_url())
             return resp.status_code == 200
-    except Exception as exc:
-        logger.debug("Temporal health check failed: %s", exc)
+    except Exception:
+        logger.debug("Temporal health check failed", exc_info=True)
         return False
 
 
@@ -92,9 +92,10 @@ async def check_ollama() -> bool:
         async with httpx.AsyncClient(timeout=_HEALTH_TIMEOUT) as client:
             resp = await client.get(_ollama_tags_url())
             return resp.status_code == 200
-    except Exception as exc:
-        logger.debug("Ollama health check failed: %s", exc)
+    except Exception:
+        logger.debug("Ollama health check failed", exc_info=True)
         return False
+
 
 
 async def check_all() -> dict[str, bool]:
