@@ -270,7 +270,7 @@ class SharedMemoryStore:
             try:
                 self._write_queue.put_nowait(None)  # sentinel
                 await self._write_worker_task
-            except (RuntimeError, CancelledError):
+            except (RuntimeError, asyncio.CancelledError):
                 # Event loop closing — cancel and await the task directly
                 self._write_worker_task.cancel()
                 try:
