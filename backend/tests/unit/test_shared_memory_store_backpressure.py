@@ -6,11 +6,15 @@ from backend.memory.store import SharedMemoryStore, WRITE_QUEUE_MAXSIZE, WRITE_Q
 
 @pytest.mark.asyncio
 async def test_write_queue_backpressure_drop_oldest():
-    # Setup store with small maxsize for testing if we wanted, 
+    # Setup store with small maxsize for testing if we wanted,
     # but we'll use the constant to match reality.
     # Actually, the constants are hardcoded in the module.
-    
-    store = SharedMemoryStore(db_path=":memory:", chroma_dir=None)
+
+    with patch("backend.memory.semantic.chromadb.HttpClient") as mock_chroma:
+        mock_client = mock_chroma.return_value
+        mock_client.get_or_create_collection = MagicMock()
+        store = SharedMemoryStore(db_path=":memory:", chroma_dir=None)
+
     # We don't start the store so the worker doesn't drain the queue
     store._started = True # Pretend it's started so write() doesn't call start()
     
@@ -65,8 +69,11 @@ async def test_write_queue_backpressure_raise_policy():
 
 @pytest.mark.asyncio
 async def test_write_queue_watermark_reset():
-    store = SharedMemoryStore(db_path=":memory:", chroma_dir=None)
-    store._started = True
+    with patch("backend.memory.semantic.chromadb.HttpClient") as mock_chroma:
+        mock_client = mock_chroma.return_value
+        mock_client.get_or_create_collection = MagicMock()
+        store = SharedMemoryStore(db_path=":memory:", chroma_dir=None)
+        store._started = True
     
     watermark_limit = int(WRITE_QUEUE_MAXSIZE * WRITE_QUEUE_HIGH_WATERMARK)
     
