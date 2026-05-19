@@ -78,6 +78,19 @@ async def lifespan(app: FastAPI):
         app.state.components["memory_store"] = "failed"
         # RECOVERABLE — continue without memory store
 
+    # Initialize SupervisorRunner pool (pre-compile graphs at startup)
+    try:
+        from backend.agents.supervisor import get_supervisor_pool
+        from backend.api.deps import get_memory_store
+        checkpointer_path = os.path.join(DATA_DIR, "checkpointer.db")
+        pool = get_supervisor_pool()
+        pool.initialize(get_memory_store(), checkpointer_path)
+        app.state.components["supervisor_pool"] = "ok"
+    except Exception as exc:
+        logger.warning("supervisor_pool_init_failed", exc=str(exc))
+        app.state.components["supervisor_pool"] = "failed"
+        # RECOVERABLE — continue without pool
+
     # Initialize Temporal (Phase 3 — gated by ENABLE_TEMPORAL env var; stays in
     # stub mode when disabled so the rest of the API still serves requests).
     try:

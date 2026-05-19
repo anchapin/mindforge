@@ -125,3 +125,70 @@ async def test_custom_allowed_agents_restricts_access():
     result = await tool.execute("read", agent_identity="unknown", integration_config={"allowed_agents": ["engineer"]})
     assert result.success is False
     assert "not authorized" in result.error
+
+
+@pytest.mark.asyncio
+async def test_tool_class_level_allowed_agents_enforced():
+    """Tool's class-level allowed_agents is enforced when no integration_config provided."""
+    tool = RestrictedTool()  # allowed_agents = ["engineer", "coo"]
+    # Researcher is NOT in the tool's class-level allowed_agents
+    result = await tool.execute("read", agent_identity="researcher")
+    assert result.success is False
+    assert "not authorized" in result.error
+
+
+@pytest.mark.asyncio
+async def test_integration_config_overrides_tool_allowed_agents():
+    """Integration config can further restrict (narrow) access beyond tool's class-level."""
+    tool = RestrictedTool()  # class-level: ["engineer", "coo"]
+    # But integration_config only allows "coo"
+    result = await tool.execute("read", agent_identity="coo", integration_config={"allowed_agents": ["coo"]})
+    assert result.success is True
+    # Engineer is in class-level but NOT in integration_config
+    result2 = await tool.execute("read", agent_identity="engineer", integration_config={"allowed_agents": ["coo"]})
+    assert result2.success is False
+    assert "not authorized" in result2.error
+
+
+@pytest.mark.asyncio
+async def test_action_specific_permissions_checked():
+    """Action-specific permissions from integration_config are validated."""
+    tool = WriteActionTool()  # allowed_agents = ["cmo"]
+    # integration_config has permissions restricting specific actions
+    result = await tool.execute(
+        "send",
+        agent_identity="cmo",
+        integration_config={
+            "allowed_agents": ["cmo"],
+            "permissions": {"allowed_actions": ["write_tool:read"]},  # only read allowed
+        },
+    )
+    assert result.success is False
+    assert "Permission" in result.error
+    assert "write_tool:send" in result.error
+
+
+@pytest.mark.asyncio
+async def test_permission_error_logged_with_agent_identity():
+    """Permission denial is logged with agent identity and requested action."""
+    import io
+    import logging
+
+    tool = RestrictedTool()  # allowed_agents = ["engineer", "coo"]
+    log_stream = io.StringIO()
+    handler = logging.StreamHandler(log_stream)
+    handler.setLevel(logging.WARNING)
+    logger = logging.getLogger("backend.tools.base")
+    logger.addHandler(handler)
+    logger.setLevel(logging.WARNING)
+
+    try:
+        result = await tool.execute("read", agent_identity="researcher")
+        assert result.success is False
+
+        log_output = log_stream.getvalue()
+        assert "restricted_api" in log_output
+        assert "researcher" in log_output
+        assert "unauthorized" in log_output.lower() or "not authorized" in log_output.lower()
+    finally:
+        logger.removeHandler(handler)

@@ -4,6 +4,7 @@ This module provides shared fixtures for unit and integration tests.
 See SPEC.md Section 5.6.2 for the full test stack documentation.
 """
 
+import gc
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -209,3 +210,6 @@ def skill_approval_no_outgoing_data() -> dict:
         },
         "memory_layers": [],
     }
+
+
+

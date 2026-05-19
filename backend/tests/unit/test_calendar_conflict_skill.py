@@ -15,7 +15,7 @@ import yaml
 
 from backend.skills.validator import validate_skill_graph
 
-SKILL_PATH = pathlib.Path("backend/skills/skills/calendar-conflict.yaml")
+SKILL_PATH = pathlib.Path(__file__).parent.parent.parent / "skills" / "skills" / "calendar-conflict.yaml"
 
 
 def test_skill_yaml_parses_with_safe_load():

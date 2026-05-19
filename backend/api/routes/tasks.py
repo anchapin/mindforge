@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
-from ...agents.supervisor import SupervisorRunner
+from ...agents.supervisor import SupervisorRunner, get_supervisor_pool
 from ...llm.inference import llm_complete_stream
 from ...memory.episodic import EpisodicMemory
 from ...memory.store import SharedMemoryStore
@@ -186,12 +186,16 @@ async def _execute_task(
             skill_error = skill_result.error
         else:
             # No skill matched — fall back to supervisor
-            runner = SupervisorRunner(memory)
-            result = await runner.run(
-                task_description=description,
-                task_id=task_id,
-                project_id=project_id,
-            )
+            pool = get_supervisor_pool()
+            runner = await pool.acquire()
+            try:
+                result = await runner.run(
+                    task_description=description,
+                    task_id=task_id,
+                    project_id=project_id,
+                )
+            finally:
+                await pool.release(runner)
             final_status = "completed" if result.error is None else "failed"
             result_context = result.context or {}
             agent_role = result.agent_role

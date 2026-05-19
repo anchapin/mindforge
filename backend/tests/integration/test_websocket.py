@@ -46,6 +46,7 @@ def _init_test_db():
         CREATE TABLE IF NOT EXISTS tasks (
             id TEXT PRIMARY KEY,
             skill_id TEXT,
+            skill_version INTEGER NOT NULL DEFAULT 1,
             status TEXT NOT NULL DEFAULT 'pending',
             task_type TEXT NOT NULL DEFAULT 'general',
             project_id TEXT,
@@ -484,13 +485,16 @@ class TestTaskCompletedWS:
         mock_result.result = {"summary": "Task completed successfully"}
         mock_runner = MagicMock()
         mock_runner.run = AsyncMock(return_value=mock_result)
+        mock_pool = MagicMock()
+        mock_pool.acquire = AsyncMock(return_value=mock_runner)
+        mock_pool.release = AsyncMock()
 
         with (
             patch("backend.api.routes.tasks.trigger_skill", mock_trigger),
             patch("backend.api.routes.tasks.get_ws_manager", return_value=tracking_ws),
             patch.object(tasks_module, "DB_PATH", _test_db_path),
             patch("backend.api.deps.DB_PATH", _test_db_path),
-            patch("backend.api.routes.tasks.SupervisorRunner", return_value=mock_runner),
+            patch("backend.api.routes.tasks.get_supervisor_pool", return_value=mock_pool),
         ):
             from backend.memory.store import SharedMemoryStore
             mock_memory = MagicMock(spec=SharedMemoryStore)
@@ -700,13 +704,16 @@ class TestTaskStatusUpdateRunningToFinal:
         mock_result.result = {}
         mock_runner = MagicMock()
         mock_runner.run = AsyncMock(return_value=mock_result)
+        mock_pool = MagicMock()
+        mock_pool.acquire = AsyncMock(return_value=mock_runner)
+        mock_pool.release = AsyncMock()
 
         with (
             patch("backend.api.routes.tasks.trigger_skill", mock_trigger),
             patch("backend.api.routes.tasks.get_ws_manager", return_value=tracking_ws),
             patch.object(tasks_module, "DB_PATH", _test_db_path),
             patch("backend.api.deps.DB_PATH", _test_db_path),
-            patch("backend.api.routes.tasks.SupervisorRunner", return_value=mock_runner),
+            patch("backend.api.routes.tasks.get_supervisor_pool", return_value=mock_pool),
         ):
             from backend.memory.store import SharedMemoryStore
             mock_memory = MagicMock(spec=SharedMemoryStore)
