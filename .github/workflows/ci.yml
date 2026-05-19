@@ -62,12 +62,14 @@ jobs:
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
           pytest backend/tests/unit -q --tb=short &
           PYTEST_PID=$!
-          # Poll until done — timeout kills pytest if it hangs, not the whole step
           for i in $(seq 1 60); do
-            kill -0 $PYTEST_PID 2>/dev/null || wait $PYTEST_PID && echo "=== [UNIT-TESTS-DONE] exit=0 $(date -Iseconds) ===" && exit 0
+            kill -0 $PYTEST_PID 2>/dev/null || { wait $PYTEST_PID; exit $?; }
             sleep 5
           done
-          kill -9 $PYTEST_PID 2>/dev/null && echo "=== [UNIT-TESTS-TIMEOUT] ===" && exit 124
+          kill -9 $PYTEST_PID 2>/dev/null || true
+          wait $PYTEST_PID 2>/dev/null || true
+          echo "=== [UNIT-TESTS-TIMEOUT] ==="
+          exit 124
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -113,20 +115,14 @@ jobs:
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
           pytest backend/tests/integration -q --tb=short --timeout=60 &
           PYTEST_PID=$!
-          # Poll until done (up to 5 min) — correctly captures exit code
           for i in $(seq 1 60); do
-            kill -0 $PYTEST_PID 2>/dev/null || { wait $PYTEST_PID; EXIT=$?; echo "=== [INTEGRATION-TESTS-DONE] exit=$EXIT $(date -Iseconds) ==="; exit $EXIT; }
+            kill -0 $PYTEST_PID 2>/dev/null || { wait $PYTEST_PID; exit $?; }
             sleep 5
           done
-          kill -9 $PYTEST_PID 2>/dev/null
+          kill -9 $PYTEST_PID 2>/dev/null || true
+          wait $PYTEST_PID 2>/dev/null || true
           echo "=== [INTEGRATION-TESTS-TIMEOUT] ==="
           exit 124
-
-          echo "=== [CLEANUP-START] $(date -Iseconds) ==="
-          docker compose --profile test kill 2>/dev/null || true
-          docker container prune -f >/dev/null 2>&1 || true
-          timeout 60 docker compose --profile test down --timeout 5 --remove-orphans 2>/dev/null || true
-          echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
 
   build-images:
     runs-on: ubuntu-latest
