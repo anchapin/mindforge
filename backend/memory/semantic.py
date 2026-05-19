@@ -100,23 +100,30 @@ class SemanticMemory:
         self._chunk_config = ChunkConfig()
         self._degraded = False  # True when ChromaDB operations fail
 
-        if chroma_dir:
-            # Persistent local ChromaDB
-            self._client = chromadb.PersistentClient(
-                path=chroma_dir,
-                settings=ChromaSettings(anonymized_telemetry=False),
-            )
-        else:
-            # Client-server mode
-            self._client = chromadb.HttpClient(  # type: ignore[call-args]
-                host=chroma_host or CHROMA_HOST,
-                settings=ChromaSettings(anonymized_telemetry=False),
-            )
+        try:
+            if chroma_dir:
+                # Persistent local ChromaDB
+                self._client = chromadb.PersistentClient(
+                    path=chroma_dir,
+                    settings=ChromaSettings(anonymized_telemetry=False),
+                )
+            else:
+                # Client-server mode
+                self._client = chromadb.HttpClient(  # type: ignore[call-args]
+                    host=chroma_host or CHROMA_HOST,
+                    settings=ChromaSettings(anonymized_telemetry=False),
+                )
 
-        self._collection = self._client.get_or_create_collection(
-            name=CHROMA_COLLECTION,
-            metadata={"description": "MindForge semantic memory"},
-        )
+            self._collection = self._client.get_or_create_collection(
+                name=CHROMA_COLLECTION,
+                metadata={"description": "MindForge semantic memory"},
+            )
+        except Exception as exc:
+            logger.warning("ChromaDB initialization failed (degraded mode): %s", exc)
+            self._degraded = True
+            self._client = None  # type: ignore[assignment]
+            self._collection = None  # type: ignore[assignment]
+
         self._bm25_index: BM25Okapi | None = None
         self._bm25_corpus: list[str] = []
         self._bm25_ids: list[str] = []
@@ -129,6 +136,10 @@ class SemanticMemory:
     def _set_degraded(self) -> None:
         """Mark this store as degraded due to ChromaDB unavailability."""
         self._degraded = True
+
+    def _clear_degraded(self) -> None:
+        """Mark this store as healthy again."""
+        self._degraded = False
 
     # ---------------------------------------------------------------------------
     # HMAC helpers
@@ -246,10 +257,11 @@ class SemanticMemory:
             try:
                 self._collection.add(
                     ids=ids,
-                    documents=texts,
                     embeddings=embeddings,  # type: ignore[arg-type]
                     metadatas=metadatas,  # type: ignore[arg-type]
+                    documents=texts,
                 )
+                self._clear_degraded()
             except Exception as exc:
                 logger.warning(
                     "ChromaDB add failed, data not persisted (degraded mode): %s",
@@ -297,6 +309,9 @@ class SemanticMemory:
             top_k: Number of results to return (before min_similarity filtering fetches more).
             min_similarity: Minimum similarity threshold (0 = no filter, used by retrieve).
         """
+        if self._collection is None:
+            raise RuntimeError("ChromaDB collection not initialized")
+
         # Build where filter
         where: dict[str, Any] = {}
         if project_id is not None:
@@ -367,6 +382,9 @@ class SemanticMemory:
 
     def build_bm25_index(self, project_id: str | None = None) -> None:
         """Rebuild BM25 index from all records. Call after writes."""
+        if self._collection is None:
+            return
+
         try:
             from rank_bm25 import BM25Okapi  # noqa: F401
         except ImportError:
@@ -403,14 +421,16 @@ class SemanticMemory:
         On ChromaDB failure, returns empty list with degraded_quality flag.
         """
         try:
-            return await self._retrieve_impl(query, project_id, top_k, use_bm25)
+            records = await self._retrieve_impl(query, project_id, top_k, use_bm25)
+            self._clear_degraded()
+            return records
         except Exception as exc:
             logger.warning(
-                "ChromaDB retrieval failed, returning empty list (degraded mode): %s",
+                "ChromaDB retrieval failed (degraded mode): %s",
                 exc,
             )
             self._set_degraded()
-            return []
+            raise
 
     async def _retrieve_impl(
         self,
@@ -430,22 +450,14 @@ class SemanticMemory:
         except ImportError:
             use_bm25 = False
 
-        try:
-            query_embs = await embed_texts([query])
-            if not query_embs:
-                return []
-            query_emb = query_embs[0]
-        except Exception as emb_err:
-            logger.warning("Embedding failed, returning empty semantic results: %s", emb_err)
+        query_embs = await embed_texts([query])
+        if not query_embs:
             return []
+        query_emb = query_embs[0]
 
-        try:
-            vector_results = await self._vector_search(
-                query_emb, project_id=project_id, top_k=top_k * 2, min_similarity=0.0
-            )
-        except Exception as chroma_err:
-            logger.warning("ChromaDB query failed, semantic retrieval unavailable: %s", chroma_err)
-            return []
+        vector_results = await self._vector_search(
+            query_emb, project_id=project_id, top_k=top_k * 2, min_similarity=0.0
+        )
 
         vector_by_id = {r.id: r for r in vector_results}
 
