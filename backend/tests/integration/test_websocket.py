@@ -56,6 +56,24 @@ def _init_test_db():
             completed_at TEXT
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS integration (
+            id TEXT PRIMARY KEY,
+            app_name TEXT NOT NULL UNIQUE,
+            auth_token_enc TEXT NOT NULL,
+            refresh_token_enc TEXT,
+            token_key_id TEXT NOT NULL DEFAULT 'local',
+            status TEXT NOT NULL DEFAULT 'active',
+            last_sync_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            extra TEXT,
+            permissions TEXT NOT NULL DEFAULT '[]',
+            allowed_agents TEXT NOT NULL DEFAULT '[]'
+        )
+    """)
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_integration_app ON integration(app_name)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_integration_status ON integration(status)")
     conn.execute(
         "INSERT INTO tasks (id, skill_id, status, task_type, project_id, description, context, created_at, updated_at) "
         "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
