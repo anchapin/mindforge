@@ -60,12 +60,10 @@ jobs:
       - name: Run unit tests
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/unit --tb=short -v
+          # timeout kills pytest if it hangs >5 min — avoids blocking docker compose down
+          timeout 300 bash -c 'pytest backend/tests/unit -q --tb=short'
           UNIT_EXIT=$?
           echo "=== [UNIT-TESTS-DONE] exit=$UNIT_EXIT $(date -Iseconds) ==="
-          echo "=== [UNIT-TESTS-CHECK] ==="
-          ps aux | grep pytest | grep -v grep | head -5 || echo "No pytest processes found"
-          echo "=== [UNIT-TESTS-EXIT] ==="
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -109,7 +107,8 @@ jobs:
           done
 
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/integration --tb=short -v --timeout=60
+          # Wrap entire test sequence in timeout so a hang doesn't block cleanup
+          timeout 300 bash -c 'pytest backend/tests/integration -q --tb=short --timeout=60'
           echo "=== [INTEGRATION-TESTS-DONE] exit=$? $(date -Iseconds) ==="
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
