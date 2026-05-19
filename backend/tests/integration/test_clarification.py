@@ -280,7 +280,7 @@ class TestClarificationFlow:
             patch.object(tasks_module, "DB_PATH", _test_db_path),
             patch("backend.api.deps.DB_PATH", _test_db_path),
         ):
-            runner = SupervisorRunner(memory_store=mock_memory)
+            runner = await SupervisorRunner.create(memory_store=mock_memory)
 
             # Supervisor runs — but currently never sends clarification_request
             # because specialist_node has no ambiguity detection

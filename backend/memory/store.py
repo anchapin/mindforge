@@ -416,6 +416,7 @@ class SharedMemoryStore:
                 try:
                     # Remove oldest item to make room
                     self._write_queue.get_nowait()
+                    self._write_queue.task_done()
                     self._metrics.record_dropped()
                     # Now put the new item
                     self._write_queue.put_nowait(item)

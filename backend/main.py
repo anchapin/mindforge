@@ -96,7 +96,7 @@ async def lifespan(app: FastAPI):
         from backend.api.deps import get_memory_store
         checkpointer_path = os.path.join(DATA_DIR, "checkpointer.db")
         pool = get_supervisor_pool()
-        pool.initialize(get_memory_store(), checkpointer_path)
+        await pool.initialize(get_memory_store(), checkpointer_path)
         app.state.components["supervisor_pool"] = "ok"
     except Exception:
         logger.warning("supervisor_pool_init_failed", exc_info=True)
