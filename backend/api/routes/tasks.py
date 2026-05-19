@@ -16,7 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 from starlette.responses import StreamingResponse
 
-from ...agents.supervisor import SupervisorRunner, get_supervisor_pool
+from ...agents.supervisor import get_supervisor_pool
 from ...llm.inference import llm_complete_stream
 from ...memory.episodic import EpisodicMemory
 from ...memory.store import SharedMemoryStore
