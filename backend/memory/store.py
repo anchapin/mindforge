@@ -267,8 +267,16 @@ class SharedMemoryStore:
     async def stop(self) -> None:
         """Stop the write worker and SQLite connection pools gracefully."""
         if self._write_worker_task:
-            self._write_queue.put_nowait(None)  # sentinel
-            await self._write_worker_task
+            try:
+                self._write_queue.put_nowait(None)  # sentinel
+                await self._write_worker_task
+            except (RuntimeError, CancelledError):
+                # Event loop closing — cancel and await the task directly
+                self._write_worker_task.cancel()
+                try:
+                    await self._write_worker_task
+                except (asyncio.CancelledError, RuntimeError):
+                    pass
 
         await self._episodic.stop()
         await self._style.stop()
