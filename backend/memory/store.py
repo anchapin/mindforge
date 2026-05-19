@@ -268,7 +268,16 @@ class SharedMemoryStore:
         """Stop the write worker and SQLite connection pools gracefully."""
         if self._write_worker_task:
             try:
-                self._write_queue.put_nowait(None)  # sentinel
+                try:
+                    self._write_queue.put_nowait(None)  # sentinel
+                except asyncio.QueueFull:
+                    # If full, drop one and put sentinel
+                    try:
+                        self._write_queue.get_nowait()
+                        self._write_queue.task_done()
+                        self._write_queue.put_nowait(None)
+                    except Exception:
+                        pass
                 await self._write_worker_task
             except (RuntimeError, asyncio.CancelledError):
                 # Event loop closing — cancel and await the task directly
@@ -427,6 +436,7 @@ class SharedMemoryStore:
                 try:
                     # Remove oldest item to make room
                     self._write_queue.get_nowait()
+                    self._write_queue.task_done()
                     self._metrics.record_dropped()
                     # Now put the new item
                     self._write_queue.put_nowait(item)
