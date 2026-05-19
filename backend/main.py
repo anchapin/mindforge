@@ -41,16 +41,28 @@ async def lifespan(app: FastAPI):
     try:
         run_migrations()
         app.state.components["db"] = "ok"
-    except Exception as exc:
-        logger.error("migration_failed", exc=str(exc))
+    except Exception:
+        logger.error("migration_failed", exc_info=True)
         app.state.components["db"] = "failed"
+
+    # Check ChromaDB connection (RECOVERABLE)
+    try:
+        from backend.db import check_chroma
+        if await check_chroma():
+            app.state.components["chroma"] = "ok"
+        else:
+            logger.warning("chroma_check_failed")
+            app.state.components["chroma"] = "failed"
+    except Exception:
+        logger.warning("chroma_init_failed", exc_info=True)
+        app.state.components["chroma"] = "failed"
 
     # Initialize LLM router — FATAL: backend cannot serve requests without LLM
     try:
         await LLM_ROUTER.initialize()
         app.state.components["llm_router"] = "ok"
-    except Exception as exc:
-        logger.critical("llm_router_init_failed", exc=str(exc))
+    except Exception:
+        logger.critical("llm_router_init_failed", exc_info=True)
         app.state.components["llm_router"] = "failed"
         raise  # FATAL — do not continue
 
@@ -62,8 +74,8 @@ async def lifespan(app: FastAPI):
     try:
         register_all_tools()
         app.state.components["tool_registry"] = "ok"
-    except Exception as exc:
-        logger.warning("tool_registry_init_failed", exc=str(exc))
+    except Exception:
+        logger.warning("tool_registry_init_failed", exc_info=True)
         app.state.components["tool_registry"] = "failed"
         # RECOVERABLE — continue without auto-registration
 
@@ -73,8 +85,8 @@ async def lifespan(app: FastAPI):
         memory_store = SharedMemoryStore()
         await memory_store.start()
         app.state.components["memory_store"] = "ok"
-    except Exception as exc:
-        logger.warning("memory_store_init_failed", exc=str(exc))
+    except Exception:
+        logger.warning("memory_store_init_failed", exc_info=True)
         app.state.components["memory_store"] = "failed"
         # RECOVERABLE — continue without memory store
 
@@ -86,8 +98,8 @@ async def lifespan(app: FastAPI):
         pool = get_supervisor_pool()
         pool.initialize(get_memory_store(), checkpointer_path)
         app.state.components["supervisor_pool"] = "ok"
-    except Exception as exc:
-        logger.warning("supervisor_pool_init_failed", exc=str(exc))
+    except Exception:
+        logger.warning("supervisor_pool_init_failed", exc_info=True)
         app.state.components["supervisor_pool"] = "failed"
         # RECOVERABLE — continue without pool
 
@@ -97,8 +109,8 @@ async def lifespan(app: FastAPI):
         app.state.temporal = TemporalClient()
         await app.state.temporal.start()
         app.state.components["temporal"] = "ok"
-    except Exception as exc:
-        logger.warning("temporal_client_init_failed", exc=str(exc))
+    except Exception:
+        logger.warning("temporal_client_init_failed", exc_info=True)
         app.state.components["temporal"] = "failed"
         # RECOVERABLE — continue without Temporal
 
