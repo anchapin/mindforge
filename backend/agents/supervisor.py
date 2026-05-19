@@ -68,6 +68,7 @@ async def _run_agent(
     task_description: str,
     memory_context: str,
     context: dict[str, Any],
+    integration_configs: dict[str, dict] | None = None,
 ) -> dict[str, Any]:
     """Dispatch to the appropriate agent by role."""
     try:
@@ -76,6 +77,10 @@ async def _run_agent(
         inc_agent_invocation(agent_role)
     except Exception:
         pass
+
+    # Inject integration_configs into context if present
+    if integration_configs:
+        context = {**context, "integration_configs": integration_configs}
 
     if agent_role == "coo":
         return await coo.run(task_description, memory_context, context)
@@ -129,6 +134,7 @@ async def specialist_node(
     """Call the specialist agent (CMO, Researcher, Engineer, or COO-self)."""
     task_type = state.context.get("task_type", "general")
     project_id = state.context.get("project_id")
+    integration_configs = state.context.get("integration_configs")
 
     memory_context = await memory_store.read(
         query=state.current_task,
@@ -143,6 +149,7 @@ async def specialist_node(
             state.current_task,
             memory_context,
             state.context,
+            integration_configs=integration_configs,
         )
 
         logger.info(
@@ -408,6 +415,7 @@ class SupervisorRunner:
         project_id: str | None = None,
         skill_name: str | None = None,
         config: dict | None = None,
+        integration_configs: dict[str, dict] | None = None,
     ) -> AgentState:
         """Run the supervisor graph for a task.
 
@@ -417,6 +425,7 @@ class SupervisorRunner:
             project_id: Scopes memory to a project.
             skill_name: Skill being executed.
             config: LangGraph config dict (thread_id, etc.)
+            integration_configs: Map of integration configs for permission wiring.
 
         Returns:
             Final AgentState with result or error.
@@ -429,7 +438,10 @@ class SupervisorRunner:
             task_id=tid,
             project_id=project_id or "",
             skill_name=skill_name,
-            context={"project_id": project_id or ""},
+            context={
+                "project_id": project_id or "",
+                "integration_configs": integration_configs or {},
+            },
         )
 
         logger.info(
@@ -451,6 +463,7 @@ class SupervisorRunner:
         skill_execution_context: dict[str, Any],
         task_id: str | None = None,
         config: dict | None = None,
+        integration_configs: dict[str, dict] | None = None,
     ) -> AgentState:
         """Run supervisor with a skill execution context.
 
@@ -462,4 +475,5 @@ class SupervisorRunner:
             project_id=skill_execution_context.get("project_id"),
             skill_name=skill_execution_context.get("skill_name"),
             config=config,
+            integration_configs=integration_configs,
         )

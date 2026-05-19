@@ -75,7 +75,7 @@ function ActivityItem({ activity, onDismiss }: ActivityItemProps) {
   };
 
   return (
-    <div className={`flex items-start gap-3 rounded-md border p-3 ${bgClass}`}>
+    <div className={`flex items-start gap-3 rounded-md border p-3 ${bgClass}`} data-testid={`activity-item-${activity.id}`}>
       <Icon size={18} className={`mt-0.5 shrink-0 ${colorClass}`} />
       <div className="min-w-0 flex-1">
         <p className="text-sm text-zinc-200">{activity.summary}</p>
@@ -89,6 +89,7 @@ function ActivityItem({ activity, onDismiss }: ActivityItemProps) {
           <button
             onClick={handleView}
             className="rounded px-2 py-1 text-xs text-indigo-400 hover:bg-zinc-700"
+            data-testid="activity-item-action"
           >
             {activity.actionLabel} →
           </button>
@@ -96,6 +97,7 @@ function ActivityItem({ activity, onDismiss }: ActivityItemProps) {
         <button
           onClick={() => onDismiss(activity.id)}
           className="rounded px-2 py-1 text-xs text-zinc-500 hover:bg-zinc-700 hover:text-zinc-300"
+          data-testid="activity-item-dismiss"
         >
           Dismiss
         </button>
@@ -123,18 +125,18 @@ export function SystemActivity() {
 
   if (visible.length === 0) {
     return (
-      <section>
+      <section data-testid="system-activity-section">
         <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-400 uppercase tracking-wide">
           <Activity size={14} />
           System Activity
         </h2>
-        <p className="text-sm text-zinc-500">No system activity in the last 24 hours.</p>
+        <p className="text-sm text-zinc-500" data-testid="system-activity-empty">No system activity in the last 24 hours.</p>
       </section>
     );
   }
 
   return (
-    <section>
+    <section data-testid="system-activity-section">
       <h2 className="mb-2 flex items-center gap-2 text-sm font-semibold text-zinc-400 uppercase tracking-wide">
         <Activity size={14} />
         System Activity
@@ -144,28 +146,28 @@ export function SystemActivity() {
       {/* Summary line */}
       <div className="mb-3 text-xs text-zinc-500">
         {byCategory.billing && (
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1" data-testid="activity-summary-billing">
             <AlertTriangle size={12} className="text-amber-400" />
             {byCategory.billing} billing {byCategory.billing === 1 ? "alert" : "alerts"}
             {", "}
           </span>
         )}
         {byCategory.calendar && (
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1" data-testid="activity-summary-calendar">
             <Calendar size={12} className="text-amber-400" />
             {byCategory.calendar} calendar {byCategory.calendar === 1 ? "conflict" : "conflicts"}
             {", "}
           </span>
         )}
         {byCategory.follow_up && (
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1" data-testid="activity-summary-follow-up">
             <Mail size={12} className="text-blue-400" />
             {byCategory.follow_up} follow-up {byCategory.follow_up === 1 ? "draft" : "drafts"}
             {", "}
           </span>
         )}
         {byCategory.worker && (
-          <span className="inline-flex items-center gap-1">
+          <span className="inline-flex items-center gap-1" data-testid="activity-summary-worker">
             <Cpu size={12} className="text-zinc-400" />
             {byCategory.worker} worker {byCategory.worker === 1 ? "event" : "events"}
           </span>
@@ -183,7 +185,7 @@ export function SystemActivity() {
       </div>
 
       {activities.length > visible.length && (
-        <button className="mt-3 text-xs text-indigo-400 hover:text-indigo-300">
+        <button className="mt-3 text-xs text-indigo-400 hover:text-indigo-300" data-testid="system-activity-view-all">
           View full activity log →
         </button>
       )}

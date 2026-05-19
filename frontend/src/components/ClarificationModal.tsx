@@ -33,6 +33,7 @@ export function ClarificationModal({
         aria-modal="true"
         aria-labelledby="clarification-title"
         className="w-full max-w-lg rounded-lg border border-zinc-700 bg-zinc-900 p-6 shadow-xl"
+        data-testid="clarification-modal"
       >
         {/* Header */}
         <div className="mb-4 flex items-center justify-between">
@@ -44,6 +45,7 @@ export function ClarificationModal({
             onClick={onCancel}
             aria-label="Close"
             className="rounded p-1 text-zinc-400 transition hover:bg-zinc-800 hover:text-zinc-200"
+            data-testid="clarification-modal-close"
           >
             <X size={20} />
           </button>
@@ -60,6 +62,7 @@ export function ClarificationModal({
                 key={choice}
                 onClick={() => onSubmit(choice)}
                 className="rounded border border-indigo-600 bg-indigo-900/30 px-4 py-2 text-sm font-medium text-indigo-300 transition hover:bg-indigo-900/50 hover:border-indigo-500"
+                data-testid={`clarification-choice-${choice}`}
               >
                 {choice}
               </button>
@@ -76,6 +79,7 @@ export function ClarificationModal({
             placeholder="Or tell me in your own words..."
             rows={3}
             className="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-zinc-100 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+            data-testid="clarification-input"
           />
         </div>
 
@@ -84,6 +88,7 @@ export function ClarificationModal({
           <button
             onClick={onCancel}
             className="rounded border border-zinc-600 px-4 py-2 text-sm text-zinc-300 transition hover:border-zinc-500"
+            data-testid="clarification-modal-cancel"
           >
             Cancel
           </button>
@@ -91,6 +96,7 @@ export function ClarificationModal({
             onClick={handleSubmit}
             disabled={!freeformText.trim()}
             className="rounded bg-indigo-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-indigo-500 disabled:opacity-50"
+            data-testid="clarification-modal-submit"
           >
             Submit
           </button>

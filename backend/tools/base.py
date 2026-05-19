@@ -115,3 +115,68 @@ class BaseTool(ABC):
         port) may accept extra keyword arguments.
         """
         ...
+
+    async def _call_with_retry(
+        self,
+        integration: str,
+        fn: Any,
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        """Run an integration call with exponential backoff retries.
+
+        Retries on:
+          - HTTP 502, 503, 504 (transient server errors)
+          - httpx network exceptions (timeout, connect error)
+        """
+        import asyncio
+        import random
+
+        import httpx
+
+        from .rate_limiter import integration_call
+
+        max_attempts = self.retry_config.get("max_attempts", 3)
+        backoff_factor = self.retry_config.get("backoff_factor", 2)
+        use_jitter = self.retry_config.get("jitter", True)
+
+        for attempt in range(1, max_attempts + 1):
+            try:
+                resp = await integration_call(integration, fn, *args, **kwargs)
+
+                # If it's an httpx Response, check for retryable status codes
+                if isinstance(resp, httpx.Response):
+                    if resp.status_code in (502, 503, 504):
+                        if attempt < max_attempts:
+                            logger.warning(
+                                "%s API transient error %d (attempt %d/%d). Retrying...",
+                                integration.capitalize(),
+                                resp.status_code,
+                                attempt,
+                                max_attempts,
+                            )
+                        else:
+                            return resp
+                    else:
+                        return resp
+                else:
+                    return resp
+
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as exc:
+                if attempt == max_attempts:
+                    logger.error("%s API network error after %d attempts: %s", integration.capitalize(), max_attempts, exc)
+                    raise
+                logger.warning(
+                    "%s API network error (attempt %d/%d): %s. Retrying...",
+                    integration.capitalize(),
+                    attempt,
+                    max_attempts,
+                    exc,
+                )
+
+            # Exponential backoff: factor ^ (attempt - 1)
+            wait_time = backoff_factor ** (attempt - 1)
+            if use_jitter:
+                wait_time += random.uniform(0, 1)
+
+            await asyncio.sleep(wait_time)

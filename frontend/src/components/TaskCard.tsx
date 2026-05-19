@@ -59,6 +59,7 @@ export function ProjectBadge({ projectId, onProjectChange }: ProjectBadgeProps) 
         className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 text-xs font-medium transition ${colorClass} ${
           onProjectChange ? "cursor-pointer hover:opacity-80" : "cursor-default"
         }`}
+        data-testid="project-badge"
       >
         {label}
         {onProjectChange && (
@@ -71,7 +72,7 @@ export function ProjectBadge({ projectId, onProjectChange }: ProjectBadgeProps) 
       {open && onProjectChange && (
         <>
           <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
-          <div className="absolute left-0 top-full z-20 mt-1 min-w-32 rounded border border-zinc-600 bg-zinc-800 py-1 shadow-lg">
+          <div className="absolute left-0 top-full z-20 mt-1 min-w-32 rounded border border-zinc-600 bg-zinc-800 py-1 shadow-lg" data-testid="project-badge-dropdown">
             {["(global)", "acme-corp", "beta-launch", "research"].map((p) => (
               <button
                 key={p}
@@ -79,6 +80,7 @@ export function ProjectBadge({ projectId, onProjectChange }: ProjectBadgeProps) 
                 className={`w-full px-3 py-1.5 text-left text-xs hover:bg-zinc-700 ${
                   (p === "(global)" ? "" : p) === projectId ? "text-indigo-400" : "text-zinc-300"
                 }`}
+                data-testid={`project-option-${p}`}
               >
                 {p}
               </button>
@@ -101,7 +103,7 @@ interface StatusBadgeProps {
 export function StatusBadge({ status }: StatusBadgeProps) {
   const config = STATUS_CONFIG[status] ?? STATUS_CONFIG.pending;
   return (
-    <div className="flex items-center gap-1.5">
+    <div className="flex items-center gap-1.5" data-testid={`status-badge-${status}`}>
       <span className={`h-2 w-2 rounded-full ${config.dotColor}`} />
       <span className={`text-xs font-medium ${config.textColor}`}>{config.label}</span>
     </div>
@@ -123,7 +125,7 @@ export function StepProgress({ currentNode, nodesCompleted, totalNodes }: StepPr
   const total = totalNodes ?? current;
 
   return (
-    <span className="text-xs text-zinc-500">
+    <span className="text-xs text-zinc-500" data-testid="step-progress">
       Step {current}/{total}
       {currentNode && (
         <span className="ml-1 text-zinc-400">→ {currentNode}</span>
@@ -157,7 +159,7 @@ export function CountdownTimer({ deadlineIso, onExpire }: CountdownTimerProps) {
   }, [deadlineIso, onExpire]);
 
   return (
-    <span className="text-xs tabular-nums text-zinc-400">{label} left</span>
+    <span className="text-xs tabular-nums text-zinc-400" data-testid="countdown-timer">{label} left</span>
   );
 }
 
@@ -200,7 +202,14 @@ export function TaskCard({ task, onClick, onProjectChange }: TaskCardProps) {
       className={`rounded border bg-zinc-800 p-4 transition ${
         isDraft ? "border-amber-600 hover:border-amber-500" : "border-zinc-700 hover:border-zinc-600"
       }`}
-      onClick={onClick}
+      onClick={() => {
+        if (isDraft && !expanded) {
+          setExpanded(true);
+        } else if (onClick) {
+          onClick();
+        }
+      }}
+      data-testid={`task-card-${task.id}`}
     >
       {/* Header row */}
       <div className="flex items-start justify-between gap-3">
@@ -252,6 +261,7 @@ export function TaskCard({ task, onClick, onProjectChange }: TaskCardProps) {
           <button
             onClick={(e) => { e.stopPropagation(); setExpanded((v) => !v); }}
             className="flex h-8 w-8 items-center justify-center rounded hover:bg-zinc-700"
+            data-testid="task-card-expand-button"
           >
             <svg
               className={`h-4 w-4 text-zinc-400 transition ${expanded ? "rotate-180" : ""}`}
@@ -267,7 +277,7 @@ export function TaskCard({ task, onClick, onProjectChange }: TaskCardProps) {
 
       {/* Expanded DraftReview inline */}
       {expanded && isDraft && draftContent && approvalDeadlineIso && (
-        <div className="mt-4 border-t border-zinc-700 pt-4">
+        <div className="mt-4 border-t border-zinc-700 pt-4" data-testid="draft-review-inline">
           <DraftReviewInline
             taskId={task.id}
             draft={draftContent}
@@ -320,18 +330,21 @@ function DraftReviewInline({ taskId, draft, approvalDeadlineIso, onCollapse }: D
             onChange={(e) => setEditedBody(e.target.value)}
             rows={5}
             className="w-full rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 focus:border-indigo-500 focus:outline-none"
+            data-testid="draft-edit-input"
           />
           <p className="text-xs text-amber-400">You modified this draft</p>
           <div className="flex gap-2">
             <button
               onClick={() => setIsEditing(false)}
               className="rounded border border-zinc-600 px-3 py-1 text-xs text-zinc-300"
+              data-testid="draft-edit-cancel"
             >
               Cancel
             </button>
             <button
               onClick={() => { alert(`Approve task ${taskId} with edited content`); setIsEditing(false); }}
               className="rounded bg-green-600 px-3 py-1 text-xs font-medium text-white hover:bg-green-500"
+              data-testid="draft-approve-edited-button"
             >
               Approve & Send
             </button>
@@ -339,13 +352,14 @@ function DraftReviewInline({ taskId, draft, approvalDeadlineIso, onCollapse }: D
         </div>
       ) : (
         <>
-          <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-zinc-300">
+          <pre className="max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-zinc-300" data-testid="draft-body-preview">
             {draft.body ?? ""}
           </pre>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               onClick={() => setIsEditing(true)}
               className="rounded border border-zinc-600 px-3 py-1 text-xs text-zinc-300 hover:border-zinc-500"
+              data-testid="draft-edit-button"
             >
               Edit draft before approving
             </button>
@@ -353,6 +367,7 @@ function DraftReviewInline({ taskId, draft, approvalDeadlineIso, onCollapse }: D
               <button
                 onClick={() => setShowReject(true)}
                 className="rounded border border-red-700 px-3 py-1 text-xs text-red-400 hover:border-red-600"
+                data-testid="draft-reject-button"
               >
                 Reject
               </button>
@@ -360,6 +375,7 @@ function DraftReviewInline({ taskId, draft, approvalDeadlineIso, onCollapse }: D
             <button
               onClick={onCollapse}
               className="rounded border border-zinc-600 px-3 py-1 text-xs text-zinc-400 hover:border-zinc-500"
+              data-testid="draft-collapse-button"
             >
               Collapse
             </button>
@@ -373,11 +389,13 @@ function DraftReviewInline({ taskId, draft, approvalDeadlineIso, onCollapse }: D
                 placeholder="What should change? (min 10 chars)"
                 rows={2}
                 className="w-full rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+                data-testid="draft-reject-input"
               />
               <div className="flex gap-2">
                 <button
                   onClick={() => setShowReject(false)}
                   className="rounded border border-zinc-600 px-3 py-1 text-xs text-zinc-300"
+                  data-testid="draft-reject-cancel"
                 >
                   Cancel
                 </button>
@@ -385,6 +403,7 @@ function DraftReviewInline({ taskId, draft, approvalDeadlineIso, onCollapse }: D
                   onClick={() => { alert(`Reject task ${taskId}: ${rejectFeedback}`); setShowReject(false); }}
                   disabled={rejectFeedback.length < 10}
                   className="rounded bg-red-600 px-3 py-1 text-xs font-medium text-white hover:bg-red-500 disabled:opacity-50"
+                  data-testid="draft-reject-submit"
                 >
                   Send feedback & rerun
                 </button>

@@ -28,7 +28,7 @@ class StripeTool(BaseTool):  # type: ignore[override]
         async with httpx.AsyncClient(timeout=30.0) as client:
 
             async def _get(url: str, **request_kwargs) -> httpx.Response:
-                return await integration_call(
+                return await self._call_with_retry(
                     "stripe",
                     client.get,
                     url,
@@ -36,7 +36,7 @@ class StripeTool(BaseTool):  # type: ignore[override]
                 )
 
             async def _post(url: str, **request_kwargs) -> httpx.Response:
-                return await integration_call(
+                return await self._call_with_retry(
                     "stripe",
                     client.post,
                     url,
@@ -169,20 +169,12 @@ class StripeTool(BaseTool):  # type: ignore[override]
                 )
 
     async def validate_auth(self, token: str | None = None) -> bool:
-        """Probe the user's real Stripe key against /v1/balance.
-
-        Returns:
-            True   -> 200 (token is valid)
-            False  -> 401 (auth rejected) OR no token supplied OR network error
-
-        Pre-fix: this used a literal "sk_test_placeholder" string and accepted
-        both 200 and 401 as success, so it could never report bad credentials.
-        """
+        """Probe the user's real Stripe key against /v1/balance."""
         if not token:
             return False
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                resp = await integration_call(
+                resp = await self._call_with_retry(
                     "stripe",
                     client.get,
                     "https://api.stripe.com/v1/balance",

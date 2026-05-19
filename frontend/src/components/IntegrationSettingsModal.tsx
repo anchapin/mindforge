@@ -49,6 +49,7 @@ export function IntegrationSettingsModal({
         aria-modal="true"
         aria-labelledby="settings-title"
         className="w-full max-w-md rounded-lg border border-zinc-700 bg-zinc-900 p-6 shadow-xl"
+        data-testid="integration-settings-modal"
       >
         <div className="flex items-center justify-between mb-4">
           <h3 id="settings-title" className="text-lg font-semibold capitalize">
@@ -58,6 +59,7 @@ export function IntegrationSettingsModal({
             onClick={onClose}
             aria-label="Close"
             className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            data-testid="integration-settings-modal-close"
           >
             <svg
               className="h-5 w-5"
@@ -76,7 +78,7 @@ export function IntegrationSettingsModal({
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" data-testid="integration-settings-form">
           {/* Permissions */}
           <fieldset>
             <legend className="mb-2 text-sm font-medium text-zinc-300">
@@ -91,6 +93,7 @@ export function IntegrationSettingsModal({
                 <label
                   key={opt.value}
                   className="flex items-start gap-2 rounded border border-zinc-700 bg-zinc-800 p-3 cursor-pointer hover:bg-zinc-750"
+                  data-testid={`permission-label-${opt.value}`}
                 >
                   <input
                     type="checkbox"
@@ -103,6 +106,7 @@ export function IntegrationSettingsModal({
                       );
                     }}
                     className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-zinc-900"
+                    data-testid={`permission-checkbox-${opt.value}`}
                   />
                   <div>
                     <p className="text-sm font-medium text-zinc-200">
@@ -128,6 +132,7 @@ export function IntegrationSettingsModal({
                 <label
                   key={opt.value}
                   className="flex items-start gap-2 rounded border border-zinc-700 bg-zinc-800 p-3 cursor-pointer hover:bg-zinc-700/50"
+                  data-testid={`agent-label-${opt.value}`}
                 >
                   <input
                     type="checkbox"
@@ -140,6 +145,7 @@ export function IntegrationSettingsModal({
                       );
                     }}
                     className="mt-0.5 h-4 w-4 rounded border-zinc-600 bg-zinc-700 text-blue-500 focus:ring-blue-500 focus:ring-offset-zinc-900"
+                    data-testid={`agent-checkbox-${opt.value}`}
                   />
                   <div>
                     <p className="text-sm font-medium text-zinc-200">
@@ -157,6 +163,7 @@ export function IntegrationSettingsModal({
               type="button"
               onClick={onClose}
               className="rounded px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800"
+              data-testid="integration-settings-modal-cancel"
             >
               Cancel
             </button>
@@ -164,6 +171,7 @@ export function IntegrationSettingsModal({
               type="submit"
               disabled={isSaving}
               className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              data-testid="integration-settings-modal-save"
             >
               {isSaving ? "Saving..." : "Save Settings"}
             </button>

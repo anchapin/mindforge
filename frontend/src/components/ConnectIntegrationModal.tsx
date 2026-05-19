@@ -56,6 +56,7 @@ export function ConnectIntegrationModal({
         aria-modal="true"
         aria-labelledby="connect-title"
         className="w-full max-w-md rounded-lg border border-zinc-700 bg-zinc-900 p-6 shadow-xl"
+        data-testid="connect-integration-modal"
       >
         <div className="flex items-center justify-between mb-4">
           <h3 id="connect-title" className="text-lg font-semibold">
@@ -65,6 +66,7 @@ export function ConnectIntegrationModal({
             onClick={onClose}
             aria-label="Close"
             className="rounded p-1 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-200"
+            data-testid="connect-integration-modal-close"
           >
             <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -77,7 +79,7 @@ export function ConnectIntegrationModal({
           Tokens are encrypted at rest using Fernet (AES-256).
         </p>
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-4" data-testid="connect-integration-form">
           <div>
             <label htmlFor="token-input" className="block text-sm font-medium text-zinc-300 mb-1">
               Access Token
@@ -91,6 +93,7 @@ export function ConnectIntegrationModal({
               required
               autoFocus
               className="w-full rounded border border-zinc-600 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-zinc-400 focus:outline-none focus:ring-1 focus:ring-zinc-500"
+              data-testid="connect-integration-token-input"
             />
           </div>
 
@@ -99,6 +102,7 @@ export function ConnectIntegrationModal({
               type="button"
               onClick={onClose}
               className="rounded px-4 py-2 text-sm text-zinc-400 hover:bg-zinc-800"
+              data-testid="connect-integration-modal-cancel"
             >
               Cancel
             </button>
@@ -106,6 +110,7 @@ export function ConnectIntegrationModal({
               type="submit"
               disabled={!token.trim() || isConnecting}
               className="rounded bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+              data-testid="connect-integration-modal-submit"
             >
               {isConnecting ? "Connecting..." : "Connect"}
             </button>

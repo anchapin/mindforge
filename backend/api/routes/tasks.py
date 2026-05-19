@@ -193,6 +193,7 @@ async def _execute_task(
                     task_description=description,
                     task_id=task_id,
                     project_id=project_id,
+                    integration_configs=integration_configs,
                 )
             finally:
                 await pool.release(runner)

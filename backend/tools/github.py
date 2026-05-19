@@ -33,7 +33,7 @@ class GitHubTool(BaseTool):  # type: ignore[override]
         async with httpx.AsyncClient(timeout=30.0) as client:
 
             async def _get(url: str, **request_kwargs) -> httpx.Response:
-                return await integration_call(
+                return await self._call_with_retry(
                     "github",
                     client.get,
                     url,
@@ -41,7 +41,7 @@ class GitHubTool(BaseTool):  # type: ignore[override]
                 )
 
             async def _post(url: str, **request_kwargs) -> httpx.Response:
-                return await integration_call(
+                return await self._call_with_retry(
                     "github",
                     client.post,
                     url,
@@ -199,18 +199,12 @@ class GitHubTool(BaseTool):  # type: ignore[override]
         }
 
     async def validate_auth(self, token: str | None = None) -> bool:
-        """Probe the user's real GitHub PAT against /user.
-
-        Pre-fix: this sent `Authorization: Bearer ` (empty token), which
-        always failed; it then returned `resp.status_code == 200` — so the
-        result was permanently False regardless of whether the user had
-        configured a valid token.
-        """
+        """Probe the user's real GitHub PAT against /user."""
         if not token:
             return False
         async with httpx.AsyncClient(timeout=10.0) as client:
             try:
-                resp = await integration_call(
+                resp = await self._call_with_retry(
                     "github",
                     client.get,
                     "https://api.github.com/user",

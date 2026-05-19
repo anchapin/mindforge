@@ -25,11 +25,11 @@ logger = logging.getLogger(__name__)
 TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
     ("github", ["github", "commit", "pr", "pull request", "repository", "git", "branch"]),
     ("email", ["email", "reply", "inbox", "mail", "send", "draft", "message"]),
-    ("research", ["research", "find", "lookup", "analyze", "competitor", "market", "data"]),
+    ("research", ["research", "find", "lookup", "look up", "analyze", "competitor", "market", "data"]),
     ("content", ["write", "blog", "post", "tweet", "linkedin", "content", "copy", "draft"]),
     ("finance", ["refund", "invoice", "billing", "stripe", "revenue", "cost", "payment"]),
-    ("engineering", ["code", "deploy", "build", "debug", "test", "ship", "api", "bug"]),
     ("operations", ["schedule", "calendar", "meeting", "task", "project", "coordinate"]),
+    ("engineering", ["code", "deploy", "build", "debug", "test", "ship", "api", "bug"]),
 ]
 
 
@@ -39,9 +39,14 @@ def classify_task_type(query: str) -> str:
     Deterministic, zero latency, zero cost.
     Returns the first matching task type, or "general".
     """
+    import re
+    query_lower = query.lower()
     for task_type, keywords in TASK_TYPE_RULES:
-        if any(kw in query.lower() for kw in keywords):
-            return task_type
+        for kw in keywords:
+            # Use word boundaries to prevent substring matches like 'pr' in 'project'
+            pattern = rf"\b{re.escape(kw)}\b"
+            if re.search(pattern, query_lower):
+                return task_type
     return "general"
 
 

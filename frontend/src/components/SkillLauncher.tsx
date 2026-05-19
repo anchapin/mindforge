@@ -20,7 +20,7 @@ export function SkillLauncher({ onActivate }: SkillLauncherProps) {
   );
 
   return (
-    <div className="rounded border border-zinc-700 bg-zinc-900 p-4">
+    <div className="rounded border border-zinc-700 bg-zinc-900 p-4" data-testid="skill-launcher">
       <h2 className="mb-4 text-lg font-semibold text-zinc-100">Skills</h2>
 
       {/* Search */}
@@ -31,21 +31,23 @@ export function SkillLauncher({ onActivate }: SkillLauncherProps) {
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search skills..."
           className="w-full rounded border border-zinc-700 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-500 focus:border-indigo-500 focus:outline-none"
+          data-testid="skill-search-input"
         />
       </div>
 
       {/* Loading state */}
-      {isLoading && <p className="text-zinc-500">Loading skills...</p>}
+      {isLoading && <p className="text-zinc-500" data-testid="skill-launcher-loading">Loading skills...</p>}
 
       {/* Skills grid */}
       <div className="grid gap-3">
         {filteredSkills.length === 0 && !isLoading && (
-          <p className="text-zinc-500">No skills found</p>
+          <p className="text-zinc-500" data-testid="skill-launcher-empty">No skills found</p>
         )}
         {filteredSkills.map((skill: Skill) => (
           <div
             key={skill.id}
             className="rounded border border-zinc-700 bg-zinc-800 p-3 transition hover:border-zinc-600"
+            data-testid={`skill-card-${skill.id}`}
           >
             <div className="flex items-start justify-between">
               <div className="min-w-0 flex-1">
@@ -57,6 +59,7 @@ export function SkillLauncher({ onActivate }: SkillLauncherProps) {
               <button
                 onClick={() => onActivate?.(skill.id)}
                 className="ml-2 shrink-0 rounded bg-indigo-600 px-3 py-1 text-sm font-medium text-white transition hover:bg-indigo-500"
+                data-testid={`skill-activate-button-${skill.id}`}
               >
                 Activate
               </button>

@@ -24,10 +24,10 @@ export function TaskTracker() {
   return (
     <div className="space-y-6">
 
-      {isLoading && <p className="text-zinc-500">Loading tasks...</p>}
+      {isLoading && <p className="text-zinc-500" data-testid="task-tracker-loading">Loading tasks...</p>}
 
       {grouped.running.length > 0 && (
-        <section>
+        <section data-testid="task-tracker-section-active">
           <h2 className="mb-2 text-sm font-semibold text-blue-400 uppercase tracking-wide">Active</h2>
           <div className="space-y-2">
             {grouped.running.map((t) => (
@@ -38,7 +38,7 @@ export function TaskTracker() {
       )}
 
       {grouped.draft.length > 0 && (
-        <section>
+        <section data-testid="task-tracker-section-draft">
           <h2 className="mb-2 text-sm font-semibold text-amber-400 uppercase tracking-wide">Awaiting Approval</h2>
           <div className="space-y-2">
             {grouped.draft.map((t) => (
@@ -49,7 +49,7 @@ export function TaskTracker() {
       )}
 
       {grouped.failed.length > 0 && (
-        <section>
+        <section data-testid="task-tracker-section-failed">
           <h2 className="mb-2 text-sm font-semibold text-red-400 uppercase tracking-wide">Failed</h2>
           <div className="space-y-2">
             {grouped.failed.map((t) => (
@@ -60,7 +60,7 @@ export function TaskTracker() {
       )}
 
       {tasks.length === 0 && !isLoading && (
-        <p className="text-center text-zinc-500">
+        <p className="text-center text-zinc-500" data-testid="task-tracker-empty">
           No tasks yet. Try: &quot;Summarize my GitHub commits from the last 24 hours&quot;
         </p>
       )}

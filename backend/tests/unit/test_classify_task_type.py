@@ -6,28 +6,7 @@ Covers ALL TASK_TYPE_RULES entries from SPEC.md Section 2.2.
 
 import pytest
 
-# TASK_TYPE_RULES from SPEC.md Section 2.2 (in rule-priority order)
-TASK_TYPE_RULES: list[tuple[str, list[str]]] = [
-    ("github", ["github", "commit", "pr ", "pull request", "repository", "git"]),
-    ("email", ["email", "reply", "inbox", "mail", "send", "draft"]),
-    ("research", ["research", "find", "look up", "lookup", "analyze", "competitor", "market"]),
-    ("finance", ["refund", "invoice", "billing", "stripe", "revenue", "cost"]),
-    ("engineering", ["code", "deploy", "build", "debug", "ship", "unit test", "auth module"]),
-    ("operations", ["schedule", "calendar", "meeting", "task", "project", "board"]),
-    ("content", ["write", "blog", "post", "tweet", "linkedin", "copy"]),
-]
-
-
-def classify_task_type(query: str) -> str:
-    """Classify a task query into a task type using keyword matching.
-
-    This is the reference implementation from SPEC.md Section 2.2.
-    """
-    query_lower = query.lower()
-    for task_type, keywords in TASK_TYPE_RULES:
-        if any(kw in query_lower for kw in keywords):
-            return task_type
-    return "general"
+from backend.agents.routing import classify_task_type
 
 
 @pytest.mark.parametrize(
