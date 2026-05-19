@@ -7,6 +7,7 @@ All outgoing messages pass through scrub() to redact sensitive fields.
 from __future__ import annotations
 
 import asyncio
+import collections
 import json
 import logging
 
@@ -65,6 +66,17 @@ class WSConnectionManager:
         self._connections: dict[str, WebSocket] = {}  # type: ignore[assignment,annotation-unchecked]
         self._global_connections: list[WebSocket] = []  # type: ignore[assignment,annotation-unchecked]
         self._lock = asyncio.Lock()
+        self._next_seq = 1
+        self._history = collections.deque(maxlen=1000)
+
+    def _assign_seq(self, message: dict, is_broadcast: bool = False) -> dict:
+        """Assign next sequence number and add to history."""
+        message["seq"] = self._next_seq
+        if is_broadcast:
+            message["_broadcast"] = True
+        self._next_seq += 1
+        self._history.append(message)
+        return message
 
     async def connect(self, websocket: WebSocket, task_id: str | None = None) -> None:
         await websocket.accept()
@@ -99,8 +111,9 @@ class WSConnectionManager:
 
     async def send(self, task_id: str, message: dict) -> None:
         message = _scrub(message)  # type: ignore[assignment]
-        payload = json.dumps(message)
         async with self._lock:
+            message = self._assign_seq(message, is_broadcast=False)
+            payload = json.dumps(message)
             ws: WebSocket | None = self._connections.get(task_id)  # type: ignore[assignment,annotation-unchecked]
         if ws:
             try:
@@ -111,8 +124,9 @@ class WSConnectionManager:
 
     async def broadcast(self, message: dict) -> None:
         message = _scrub(message)  # type: ignore[assignment]
-        payload = json.dumps(message)
         async with self._lock:
+            message = self._assign_seq(message, is_broadcast=True)
+            payload = json.dumps(message)
             listeners: list[WebSocket] = list(self._global_connections)  # type: ignore[assignment,annotation-unchecked]
         for ws in listeners:
             try:
@@ -209,11 +223,61 @@ class WSConnectionManager:
         msg_type = data.get("type")
         if msg_type == "subscribe":
             last_seq = data.get("last_sequence", 0)
-            logger.debug("[WS] Client subscribing from seq=%d", last_seq)
+            logger.debug("[WS] Client subscribing from seq=%d (task_id=%s)", last_seq, task_id)
+            await self._replay_events(websocket, last_seq, task_id)
         elif msg_type == "ping":
             await websocket.send_text(json.dumps({"type": "pong"}))
         else:
             logger.debug("[WS] Unknown client message type: %s", msg_type)
+
+    async def _replay_events(self, websocket: WebSocket, last_seq: int, task_id: str | None) -> None:
+        """Replay missed events from history."""
+        async with self._lock:
+            history = list(self._history)
+
+        if not history:
+            return
+
+        # Gap detection
+        if last_seq > 0 and history[0].get("seq", 0) > last_seq + 1:
+            logger.warning(
+                "[WS] Sequence gap detected for %s: client at %d, history starts at %d",
+                task_id or "global",
+                last_seq,
+                history[0].get("seq"),
+            )
+
+        replayed = 0
+        for msg in history:
+            msg_seq = msg.get("seq", 0)
+            if msg_seq > last_seq:
+                is_msg_broadcast = msg.get("_broadcast", False)
+                msg_task_id = msg.get("task_id")
+
+                # Routing logic:
+                # 1. Message was a broadcast -> everyone gets it.
+                # 2. Message was targeted to a task -> only that task client gets it.
+                # Note: Global clients currently only receive broadcasts in real-time 'send',
+                # so we match that here.
+
+                should_send = False
+                if is_msg_broadcast or task_id and task_id == msg_task_id:
+                    should_send = True
+
+                if should_send:
+                    try:
+                        await websocket.send_text(json.dumps(msg))
+                        replayed += 1
+                    except Exception:
+                        break
+
+        if replayed > 0:
+            logger.info(
+                "[WS] Replayed %d events to %s (last_seq=%d)",
+                replayed,
+                task_id or "global",
+                last_seq
+            )
 
     async def send_skill_triggered(self, skill_id: str, task_id: str) -> None:
         await self.broadcast({"type": "skill_triggered", "skill_id": skill_id, "task_id": task_id})
