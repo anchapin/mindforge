@@ -492,7 +492,17 @@ class SharedMemoryStore:
         Circuit breaker trips after consecutive failures to prevent cascade to downstream.
         """
         while True:
-            item = await self._write_queue.get()
+            try:
+                item = await self._write_queue.get()
+            except asyncio.CancelledError:
+                # Event loop shutting down — drain the queue before exiting
+                while not self._write_queue.empty():
+                    try:
+                        self._write_queue.get_nowait()
+                        self._write_queue.task_done()
+                    except asyncio.QueueEmpty:
+                        break
+                break
             if item is None:
                 break
 
