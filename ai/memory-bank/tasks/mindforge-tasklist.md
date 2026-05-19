@@ -7,98 +7,47 @@
 
 ## Development Tasks
 
-### [ ] Task 1: Complete JSON recovery implementation for all agents
+### [x] Task 1: Complete JSON recovery implementation for all agents
 **Description**: Refactor CMO, Researcher, and Engineer agents to use the `parse_with_recovery` utility already implemented in `coo.py`.
-**Acceptance Criteria**: 
-- CMO, Researcher, and Engineer agents no longer fail silently on malformed JSON.
-- `parse_with_recovery` is the shared entry point for LLM response parsing.
-- Unit tests verify recovery from common LLM markdown-wrapping artifacts.
+**Status**: COMPLETED - All specialist agents now use `parse_with_recovery`.
 
-**Files to Create/Edit**:
-- `backend/agents/cmo.py`
-- `backend/agents/researcher.py`
-- `backend/agents/engineer.py`
-
-**Reference**: Issue #2: Agent JSON fragility
-
-### [ ] Task 2: Wire agent identity to tool execution in supervisor
+### [x] Task 2: Wire agent identity to tool execution in supervisor
 **Description**: Update `specialist_node` in `supervisor.py` to pass the `agent_role` as `agent_identity` when calling tools, enabling the permission checks in `BaseTool`.
-**Acceptance Criteria**: 
-- `BaseTool.execute` receives the correct `agent_identity`.
-- Integration tests confirm that unauthorized agents are blocked from calling restricted tools.
+**Status**: COMPLETED - Agent identity and integration configs are now propagated to tool execution.
 
-**Files to Create/Edit**:
-- `backend/agents/supervisor.py`
-- `backend/tools/base.py`
-
-**Reference**: Issue #3: Tool permission enforcement
-
-### [ ] Task 3: Global data-testid injection for E2E stability
+### [x] Task 3: Global data-testid injection for E2E stability
 **Description**: Add `data-testid` attributes to all primary interactive components (Buttons, Inputs, Modals, Nav items) to stabilize Playwright E2E tests.
-**Acceptance Criteria**: 
-- Primary UI elements have unique, stable `data-testid` attributes.
-- Playwright tests updated to use these IDs instead of fragile CSS/text selectors.
-- `frontend/src/components/` files updated.
+**Status**: COMPLETED - data-testid attributes injected across core React components.
 
-**Files to Create/Edit**:
-- `frontend/src/components/ChatInterface.tsx`
-- `frontend/src/components/TaskTracker.tsx`
-- `frontend/src/components/DraftReview.tsx`
-- `frontend/src/components/SkillLauncher.tsx`
-
-**Reference**: User Hint: data-testid injection
-
-### [ ] Task 4: Refactor classify_task_type to shared routing module
+### [x] Task 4: Refactor classify_task_type to shared routing module
 **Description**: Consolidate duplicated classification logic from `store.py` and `supervisor.py` into `backend/agents/routing.py`.
-**Acceptance Criteria**: 
-- Single source of truth for task classification.
-- No regression in routing accuracy.
+**Status**: COMPLETED - Routing logic centralized and fixed word boundary matching.
 
-**Files to Create/Edit**:
-- `backend/agents/routing.py`
-- `backend/memory/store.py`
-- `backend/agents/supervisor.py`
-
-**Reference**: Issue #4: Duplicate classify_task_type
-
-### [ ] Task 5: Migrate PGLite to aiosqlite (Async I/O)
+### [x] Task 5: Migrate PGLite to aiosqlite (Async I/O)
 **Description**: Replace synchronous `sqlite3` calls with `aiosqlite` in `EpisodicMemoryStore` and `WritingProfileStore` to prevent blocking the event loop.
-**Acceptance Criteria**: 
-- All database operations are awaited and non-blocking.
-- Existing memory tests pass with async implementation.
+**Status**: COMPLETED - Verified full async I/O for SQLite stores.
 
-**Files to Create/Edit**:
-- `backend/memory/episodic.py`
-- `backend/memory/style.py`
-
-**Reference**: Issue #5: Sync SQLite in async
-
-### [ ] Task 6: Implement SupervisorRunner Pool
+### [x] Task 6: Implement SupervisorRunner Pool
 **Description**: Initialize a pool of pre-compiled `SupervisorRunner` instances at startup to avoid expensive graph compilation per request.
-**Acceptance Criteria**: 
-- `SupervisorRunnerPool` initialized in FastAPI lifespan.
-- Tasks are executed by acquiring a runner from the pool.
-- Performance metrics show reduced task startup latency.
+**Status**: COMPLETED - Pool initialized in main.py and used in tasks API.
 
-**Files to Create/Edit**:
-- `backend/agents/supervisor.py`
-- `backend/api/routes/tasks.py`
-- `backend/main.py`
-
-**Reference**: Issue #6: SupervisorRunner not reused
-
-### [ ] Task 7: E2E Stability - Implement retry logic for transient integration failures
+### [x] Task 7: E2E Stability - Implement retry logic for transient integration failures
 **Description**: Wrap external integration calls (GitHub, Stripe) in retry logic with exponential backoff.
-**Acceptance Criteria**: 
-- Transient network errors (5xx, timeouts) do not crash the task.
-- `BaseTool` handles retries using the configured `retry_config`.
+**Status**: COMPLETED - Exponential backoff with jitter implemented in BaseTool.
 
-**Files to Create/Edit**:
-- `backend/tools/base.py`
-- `backend/tools/integrations/github.py`
-- `backend/tools/integrations/stripe.py`
+## Phase 4: Soak Test Preparation (Next Sprint)
+### [x] Task 8: Author `github-summary` skill
+- **Goal**: Create a skill that fetches latest GitHub activity and generates a summary.
+- **Status**: COMPLETED - `github-summary.yaml` authored and validated.
 
-**Reference**: User Hint: E2E stability
+### [x] Task 9: Author `email-followup` skill
+- **Goal**: Create a skill that drafts a follow-up email for a specific task.
+- **Status**: COMPLETED - `email-followup.yaml` authored and validated.
+
+### [ ] Task 10: Execute 7-day soak test harness
+- **Goal**: Run `scripts/soak_test.sh` and generate `report.md`.
+- **AC**: Pass all 3 criteria (No restarts, bounded memory, 5+ skills).
+
 
 ## Quality Requirements
 - [ ] All code changes must pass `make lint` and `make test`.

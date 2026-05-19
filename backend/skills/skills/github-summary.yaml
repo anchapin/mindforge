@@ -1,0 +1,73 @@
+version: "1"
+name: github-summary
+description: >
+  Fetches the latest activity from a GitHub repository and generates
+  a natural language summary of recent changes.
+category: engineering
+trigger:
+  type: keyword
+  keywords:
+    - github
+    - summary
+    - commits
+    - activity
+    - latest
+
+execution_graph:
+  type: directed_acyclic_graph
+  nodes:
+    - id: fetch_activity
+      agent: researcher
+      goal: >
+        Fetch the latest commits and open issues from the repository.
+        Identify the primary contributors and the main focus of recent work.
+      tools:
+        - github_api
+      memory_layers:
+        - semantic
+        - episodic
+
+    - id: summarize
+      agent: cmo
+      goal: >
+        Synthesize the fetched GitHub activity into a concise summary.
+        Highlight key changes, bug fixes, and new features.
+        The summary should be formatted for a daily standup or project update.
+      memory_layers:
+        - episodic
+        - style
+      output_schema:
+        type: object
+        fields:
+          - summary
+          - key_contributors
+          - priority_issues
+
+    - id: store_summary
+      agent: coo
+      goal: >
+        Log the generated GitHub summary to episodic memory for future reference.
+        Ensure the entry is tagged with the repository name.
+      memory_layers:
+        - episodic
+
+    - id: end
+      agent: coo
+      goal: GitHub summary complete.
+      memory_layers: []
+
+  edges:
+    - from: fetch_activity
+      to: summarize
+      condition: fetch_activity.success
+    - from: summarize
+      to: store_summary
+      condition: summarize.success
+    - from: store_summary
+      to: end
+      condition: store_summary.success
+
+memory_layers:
+  - semantic
+  - episodic
+  - style

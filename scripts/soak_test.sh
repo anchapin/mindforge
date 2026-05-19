@@ -32,7 +32,7 @@ INTERVAL_SECONDS="${INTERVAL_SECONDS:-1800}"
 DURATION_SECONDS="${DURATION_SECONDS:-604800}"
 RUN_ID="${RUN_ID:-$(date -u +%Y%m%dT%H%M%SZ)}"
 RUN_DIR="${RUN_DIR:-${HOME}/.mindforge-soak/run-${RUN_ID}}"
-SKILL_LIST="${SKILL_LIST:-refund,calendar-conflict,distill,github-summary,email-followup}"
+SKILL_LIST="${SKILL_LIST:-subscription-refund,calendar-conflict,distill-your-own-skill,github-summary,email-followup}"
 COMPOSE_BACKEND="${COMPOSE_BACKEND:-backend}"
 DRY_RUN="${DRY_RUN:-0}"
 

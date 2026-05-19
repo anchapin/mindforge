@@ -1,0 +1,77 @@
+version: "1"
+name: email-followup
+description: >
+  Drafts and sends a follow-up email for a stalled task or a previous
+  interaction, ensuring the user's voice and style are preserved.
+category: content
+trigger:
+  type: keyword
+  keywords:
+    - follow up
+    - followup
+    - email
+    - remind
+    - draft
+
+execution_graph:
+  type: directed_acyclic_graph
+  nodes:
+    - id: research_context
+      agent: researcher
+      goal: >
+        Retrieve context from episodic memory regarding the previous interaction.
+        Identify why a follow-up is needed and what the expected outcome was.
+      memory_layers:
+        - semantic
+        - episodic
+
+    - id: draft_email
+      agent: cmo
+      goal: >
+        Draft a professional yet personalized follow-up email.
+        Incorporate the user's writing style and signature phrases.
+        Draft must include: recipient address, subject, and body.
+      requires_approval: true
+      approval_timeout_minutes: 1440
+      memory_layers:
+        - episodic
+        - style
+      output_schema:
+        type: object
+        fields:
+          - to
+          - subject
+          - body
+
+    - id: send_email
+      agent: coo
+      goal: >
+        Send the approved follow-up email via the email integration.
+        Log the send event to episodic memory.
+      tools:
+        - email_send
+      requires_approval: true
+      approval_timeout_minutes: 2880
+      memory_layers:
+        - episodic
+
+    - id: end
+      agent: coo
+      goal: Email follow-up complete.
+      memory_layers: []
+
+  edges:
+    - from: research_context
+      to: draft_email
+      condition: research_context.success
+    - from: draft_email
+      to: send_email
+      condition: draft_email.approved
+    - from: send_email
+      to: end
+      condition: send_email.approved
+
+memory_layers:
+  - semantic
+  - episodic
+  - style
