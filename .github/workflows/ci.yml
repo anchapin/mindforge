@@ -60,16 +60,8 @@ jobs:
       - name: Run unit tests
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/unit -q --tb=short &
-          PYTEST_PID=$!
-          for i in $(seq 1 60); do
-            kill -0 $PYTEST_PID 2>/dev/null || { wait $PYTEST_PID; exit $?; }
-            sleep 5
-          done
-          kill -9 $PYTEST_PID 2>/dev/null || true
-          wait $PYTEST_PID 2>/dev/null || true
-          echo "=== [UNIT-TESTS-TIMEOUT] ==="
-          exit 124
+          pytest backend/tests/unit -q --tb=short
+          echo "=== [UNIT-TESTS-DONE] exit=$? $(date -Iseconds) ==="
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -113,16 +105,16 @@ jobs:
           done
 
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/integration -q --tb=short --timeout=60 &
-          PYTEST_PID=$!
-          for i in $(seq 1 60); do
-            kill -0 $PYTEST_PID 2>/dev/null || { wait $PYTEST_PID; exit $?; }
-            sleep 5
-          done
-          kill -9 $PYTEST_PID 2>/dev/null || true
-          wait $PYTEST_PID 2>/dev/null || true
-          echo "=== [INTEGRATION-TESTS-TIMEOUT] ==="
-          exit 124
+          pytest backend/tests/integration -q --tb=short --timeout=60
+          EXIT=$?
+          echo "=== [INTEGRATION-TESTS-DONE] exit=$EXIT $(date -Iseconds) ==="
+
+          echo "=== [CLEANUP-START] $(date -Iseconds) ==="
+          docker compose --profile test kill 2>/dev/null || true
+          docker container prune -f >/dev/null 2>&1 || true
+          timeout 60 docker compose --profile test down --timeout 5 --remove-orphans 2>/dev/null || true
+          echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
+          exit $EXIT
 
   build-images:
     runs-on: ubuntu-latest
