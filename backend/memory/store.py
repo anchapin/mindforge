@@ -320,16 +320,27 @@ class SharedMemoryStore:
                     project_id=project_id,
                     top_k=top_k,
                 )
-                formatted = "\n".join(
-                    f"- [{r.metadata.get('agent_role', '?')}] {r.text[:200]}" for r in semantic_records
-                )
-                results.append(
-                    MemoryResult(
-                        memory_type="semantic",
-                        records=semantic_records,
-                        formatted=formatted or "(no relevant semantic memories)",
+
+                if self._semantic.degraded:
+                    results.append(
+                        MemoryResult(
+                            memory_type="semantic",
+                            records=[],
+                            formatted="(semantic memory unavailable — degraded mode)",
+                            degraded_quality=True,
+                        )
                     )
-                )
+                else:
+                    formatted = "\n".join(
+                        f"- [{r.metadata.get('agent_role', '?')}] {r.text[:200]}" for r in semantic_records
+                    )
+                    results.append(
+                        MemoryResult(
+                            memory_type="semantic",
+                            records=semantic_records,
+                            formatted=formatted or "(no relevant semantic memories)",
+                        )
+                    )
             except Exception as exc:
                 logger.warning(
                     "Semantic memory retrieval failed (ChromaDB unavailable?): %s. "
