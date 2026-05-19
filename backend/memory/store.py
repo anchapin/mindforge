@@ -267,8 +267,16 @@ class SharedMemoryStore:
     async def stop(self) -> None:
         """Stop the write worker and SQLite connection pools gracefully."""
         if self._write_worker_task:
-            self._write_queue.put_nowait(None)  # sentinel
-            await self._write_worker_task
+            try:
+                self._write_queue.put_nowait(None)  # sentinel
+                await self._write_worker_task
+            except (RuntimeError, asyncio.CancelledError):
+                # Event loop closing — cancel and await the task directly
+                self._write_worker_task.cancel()
+                try:
+                    await self._write_worker_task
+                except (asyncio.CancelledError, RuntimeError):
+                    pass
 
         await self._episodic.stop()
         await self._style.stop()
@@ -492,7 +500,17 @@ class SharedMemoryStore:
         Circuit breaker trips after consecutive failures to prevent cascade to downstream.
         """
         while True:
-            item = await self._write_queue.get()
+            try:
+                item = await self._write_queue.get()
+            except asyncio.CancelledError:
+                # Event loop shutting down — drain the queue before exiting
+                while not self._write_queue.empty():
+                    try:
+                        self._write_queue.get_nowait()
+                        self._write_queue.task_done()
+                    except asyncio.QueueEmpty:
+                        break
+                break
             if item is None:
                 break
 

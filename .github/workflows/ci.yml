@@ -60,12 +60,8 @@ jobs:
       - name: Run unit tests
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/unit --tb=short -v
-          UNIT_EXIT=$?
-          echo "=== [UNIT-TESTS-DONE] exit=$UNIT_EXIT $(date -Iseconds) ==="
-          echo "=== [UNIT-TESTS-CHECK] ==="
-          ps aux | grep pytest | grep -v grep | head -5 || echo "No pytest processes found"
-          echo "=== [UNIT-TESTS-EXIT] ==="
+          pytest backend/tests/unit -q --tb=short
+          echo "=== [UNIT-TESTS-DONE] exit=$? $(date -Iseconds) ==="
 
   integration-tests:
     runs-on: ubuntu-latest
@@ -109,14 +105,16 @@ jobs:
           done
 
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/integration --tb=short -v --timeout=60
-          echo "=== [INTEGRATION-TESTS-DONE] exit=$? $(date -Iseconds) ==="
+          pytest backend/tests/integration -q --tb=short --timeout=60
+          EXIT=$?
+          echo "=== [INTEGRATION-TESTS-DONE] exit=$EXIT $(date -Iseconds) ==="
 
           echo "=== [CLEANUP-START] $(date -Iseconds) ==="
           docker compose --profile test kill 2>/dev/null || true
           docker container prune -f >/dev/null 2>&1 || true
           timeout 60 docker compose --profile test down --timeout 5 --remove-orphans 2>/dev/null || true
           echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
+          exit $EXIT
 
   build-images:
     runs-on: ubuntu-latest
