@@ -289,6 +289,20 @@ async def execute_skill(
         integration_configs: Map of integration app_name -> config dict with
             allowed_agents and permissions from the DB.
     """
+    # Section 3b.5: Invocation-time validation with caching (#105)
+    from backend.skills.registry import get_registry
+    registry = get_registry()
+    validation_errors = registry.validate_for_execution(skill.id)
+    if validation_errors:
+        return SkillResult(
+            skill_id=skill.id,
+            skill_version=skill.version,
+            status="failed",
+            error=f"Skill validation failed: {'; '.join(validation_errors)}",
+            started_at=datetime.utcnow(),
+            completed_at=datetime.utcnow(),
+        )
+
     graph = skill.execution_graph
     if not graph or not graph.nodes:
         return SkillResult(
@@ -434,6 +448,20 @@ async def execute_skill_continue(
         integration_configs: Map of integration app_name -> config dict with
             allowed_agents and permissions from the DB.
     """
+    # Section 3b.5: Invocation-time validation with caching (#105)
+    from backend.skills.registry import get_registry
+    registry = get_registry()
+    validation_errors = registry.validate_for_execution(ctx.skill.id)
+    if validation_errors:
+        return SkillResult(
+            skill_id=ctx.skill.id,
+            skill_version=ctx.skill.version,
+            status="failed",
+            error=f"Skill validation failed: {'; '.join(validation_errors)}",
+            started_at=ctx.started_at,
+            completed_at=datetime.utcnow(),
+        )
+
     graph = ctx.skill.execution_graph
     if not graph:
         return SkillResult(
