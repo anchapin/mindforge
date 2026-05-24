@@ -208,7 +208,7 @@ class TestToolRateLimiterWiring:
         mock_client.get = AsyncMock(return_value=mock_resp)
 
         with (
-            patch("backend.tools.github.integration_call", side_effect=tracking_call),
+            patch("backend.tools.rate_limiter.integration_call", side_effect=tracking_call),
             patch("httpx.AsyncClient", return_value=mock_client),
         ):
             result = await GitHubTool().execute(
@@ -241,7 +241,7 @@ class TestToolRateLimiterWiring:
         mock_client.get = AsyncMock(return_value=mock_resp)
 
         with (
-            patch("backend.tools.stripe.integration_call", side_effect=tracking_call),
+            patch("backend.tools.rate_limiter.integration_call", side_effect=tracking_call),
             patch("httpx.AsyncClient", return_value=mock_client),
         ):
             result = await StripeTool().execute(action="balance", api_key="sk_test")
