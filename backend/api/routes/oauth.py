@@ -29,6 +29,7 @@ from pydantic import BaseModel, Field
 from ..deps import db_dep
 from ..oauth import (
     COMPOSIO_PROVIDER,
+    LINEAR_PROVIDER,
     OAuthProviderError,
     get_provider,
     register_provider,
@@ -37,9 +38,9 @@ from ..oauth import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/oauth", tags=["oauth"])
 
-# Register the only provider that ships in PR A. PR B/C will not add new
-# providers -- they extend Composio coverage instead.
+# Register providers. Composio handles Gmail/Google Calendar; Linear handles Linear.
 register_provider(COMPOSIO_PROVIDER)
+register_provider(LINEAR_PROVIDER)
 
 _STATE_TTL_SECONDS = 600  # 10 minutes -- generous for slow OAuth dialogs
 
