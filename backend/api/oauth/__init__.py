@@ -11,6 +11,7 @@ behind the same route surface without breaking callers.
 """
 
 from .composio_provider import COMPOSIO_PROVIDER, ComposioOAuthProvider
+from .linear_provider import LINEAR_PROVIDER, LinearOAuthProvider
 from .provider import (
     OAuthProvider,
     OAuthProviderError,
@@ -22,6 +23,8 @@ from .provider import (
 __all__ = [
     "COMPOSIO_PROVIDER",
     "ComposioOAuthProvider",
+    "LINEAR_PROVIDER",
+    "LinearOAuthProvider",
     "OAuthProvider",
     "OAuthProviderError",
     "OAuthStartResult",
