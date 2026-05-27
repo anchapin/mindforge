@@ -125,9 +125,7 @@ class WriteCircuitBreaker:
 
     async def can_execute(self) -> bool:
         """Check if execution is allowed (not blocked by open circuit)."""
-        if self.is_open:
-            return False
-        return True
+        return not self.is_open
 
 
 # ---------------------------------------------------------------------------------------
