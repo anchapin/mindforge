@@ -455,7 +455,7 @@ class SharedMemoryStore:
 
     async def write_episodic(self, record: EpisodicMemory) -> None:
         """Direct (non-queued) episodic write."""
-        self._episodic.insert(record)
+        await self._episodic.insert(record)
 
     async def _process_writes(self) -> None:
         """Background worker: processes write queue with circuit breaker protection.
@@ -490,9 +490,9 @@ class SharedMemoryStore:
                     )
                 elif item.memory_type == "episodic":
                     record = EpisodicMemory(**item.content)
-                    self._episodic.insert(record)
+                    await self._episodic.insert(record)
                 elif item.memory_type == "style":
-                    self._style.update_style(item.content)
+                    await self._style.update_style(item.content)
                 else:
                     logger.warning("Unknown memory_type in write queue: %s", item.memory_type)
             except Exception as exc:
@@ -523,13 +523,13 @@ class SharedMemoryStore:
     def get_writing_profile(self) -> WritingProfileStore:
         return self._style
 
-    def update_writing_style(self, updates: dict[str, Any]) -> None:
-        self._style.update_style(updates)
+    async def update_writing_style(self, updates: dict[str, Any]) -> None:
+        await self._style.update_style(updates)
         logger.info("Writing style profile updated: %s", list(updates.keys()))
 
     def get_queue_metrics(self) -> dict[str, Any]:
         """Return current write queue metrics."""
-        metrics = self._metrics.to_dict()
+        metrics: dict[str, Any] = self._metrics.to_dict()
         metrics["queue_size"] = self._write_queue.qsize()
         metrics["queue_maxsize"] = self.MAX_QUEUE_SIZE
         metrics["queue_fill_ratio"] = float(self._write_queue.qsize()) / self.MAX_QUEUE_SIZE
@@ -539,10 +539,10 @@ class SharedMemoryStore:
     # Management
     # ---------------------------------------------------------------------------
 
-    def delete_all_memories(self) -> dict[str, int]:
-        episodic_count = self._episodic.delete_older_than(days=0) or 0
+    async def delete_all_memories(self) -> dict[str, int]:
+        episodic_count = await self._episodic.delete_older_than(days=0)
         semantic_count = self._semantic.delete_all()
-        self._style.update_style(
+        await self._style.update_style(
             {
                 "tone": "semi-formal",
                 "sentence_length": "medium",
