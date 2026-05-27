@@ -11,8 +11,7 @@ Key principles:
   - Semantic writes call sanitize_for_memory() first (§3b.8 Layer 1)
   - Semantic reads verify HMAC and exclude tampered entries
   - classify_task_type() keyword rules scope episodic retrieval
-
-All SQLite operations use aiosqlite via async connection pools for non-blocking I/O.
+  - TASK_TYPE_RULES imported from routing.py (single source of truth)
 """
 
 from __future__ import annotations
@@ -24,17 +23,13 @@ from dataclasses import dataclass, field
 from threading import Lock
 from typing import Any
 
+from ..agents.routing import TASK_TYPE_RULES
 from .episodic import EpisodicMemory, EpisodicMemoryStore
 from .semantic import SemanticMemory
 from .style import WritingProfileStore
-from ..agents.routing import classify_task_type
 
 logger = logging.getLogger(__name__)
 
-# Queue configuration
-WRITE_QUEUE_MAXSIZE = 1000
-WRITE_QUEUE_HIGH_WATERMARK = 0.75  # 75% capacity triggers warning
-WRITE_QUEUE_DROP_POLICY = "drop_oldest"  # "drop_oldest" | "raise"
 
 # ---------------------------------------------------------------------------------------
 # Memory result container
@@ -43,14 +38,17 @@ WRITE_QUEUE_DROP_POLICY = "drop_oldest"  # "drop_oldest" | "raise"
 
 @dataclass
 class MemoryResult:
-    memory_type: str  # "semantic" | "episodic" | "style"
+    memory_type: str = ""  # "semantic" | "episodic" | "style"
     records: list[Any] = field(default_factory=list)
     formatted: str = ""  # human-readable rendering
-    degraded_quality: bool = False  # True when semantic layer failed (ChromaDB unavailable)
+    degraded_quality: bool = False  # set True when this layer ran in degraded mode
 
     def to_prompt_block(self) -> str:
-        if not self.records and not self.degraded_quality:
+        # Return the formatted string even when records is empty (degraded mode indicator)
+        if not self.records and not self.formatted:
             return ""
+        if not self.records:
+            return self.formatted  # degraded mode: show formatted message as warning
         return f"## {self.memory_type.title()} Memory\n{self.formatted}"
 
 
@@ -60,12 +58,9 @@ class MemoryResult:
 
 
 def format_combined_context(results: list[MemoryResult]) -> str:
-    """Combine heterogeneous memory results into a single context string for prompt injection.
-
-    degraded_quality blocks are included even when records is empty so the LLM knows
-    about the degraded state and can surface a warning to the user.
-    """
-    sections = [r.to_prompt_block() for r in results if r.records or r.degraded_quality]
+    """Combine heterogeneous memory results into a single context string for prompt injection."""
+    # Include results that have records OR have a non-empty formatted string (degraded mode indicator)
+    sections = [r.to_prompt_block() for r in results if r.records or r.formatted]
     return "\n\n".join(sections)
 
 
@@ -130,7 +125,9 @@ class WriteCircuitBreaker:
 
     async def can_execute(self) -> bool:
         """Check if execution is allowed (not blocked by open circuit)."""
-        return not self.is_open
+        if self.is_open:
+            return False
+        return True
 
 
 # ---------------------------------------------------------------------------------------
@@ -206,14 +203,17 @@ class SharedMemoryStore:
 
     Architecture:
       - Semantic  → ChromaDB via self._semantic
-      - Episodic   → PGLite  via self._episodic (async aiosqlite)
-      - Style      → PGLite  via self._style (async aiosqlite)
+      - Episodic   → PGLite  via self._episodic
+      - Style      → PGLite  via self._style
 
     Write path: enqueued to self._write_queue → background worker processes
                 with deduplication (24h lookback).
-
-    All SQLite operations use async connection pools for non-blocking I/O.
+                Queue has maxsize=1000 with overflow protection.
     """
+
+    # Backpressure configuration
+    MAX_QUEUE_SIZE = 1000
+    HIGH_WATERMARK = 750  # 75% - log warning here
 
     def __init__(
         self,
@@ -225,19 +225,18 @@ class SharedMemoryStore:
     ):
         self._semantic = SemanticMemory(chroma_dir=chroma_dir, chroma_host=chroma_host)
         self._episodic = EpisodicMemoryStore(db_path=db_path, pool_size=sqlite_pool_size)
-        self._style = WritingProfileStore(db_path=db_path, pool_size=sqlite_pool_size)
+        self._style = WritingProfileStore(db_path=db_path)
         self._dedup_hours = dedup_lookback_hours
 
-        # Bounded async write queue with backpressure
-        self._write_queue: asyncio.Queue = asyncio.Queue(maxsize=WRITE_QUEUE_MAXSIZE)
+        # Async write queue with backpressure protection
+        self._write_queue: asyncio.Queue = asyncio.Queue(maxsize=self.MAX_QUEUE_SIZE)
         self._write_worker_task: asyncio.Task | None = None
         self._started = False
+        self._dropped_writes = 0
+        self._high_watermark_logged = False
 
         # Write queue metrics
         self._metrics = WriteQueueMetrics()
-
-        # Track if we've logged watermark warning (reset on drain)
-        self._watermark_logged = False
 
         # Circuit breakers per memory type for downstream failure handling
         self._circuit_breakers: dict[str, WriteCircuitBreaker] = {
@@ -271,7 +270,6 @@ class SharedMemoryStore:
                 self._write_queue.put_nowait(None)  # sentinel
                 await self._write_worker_task
             except (RuntimeError, asyncio.CancelledError):
-                # Event loop closing — cancel and await the task directly
                 self._write_worker_task.cancel()
                 try:
                     await self._write_worker_task
@@ -280,8 +278,6 @@ class SharedMemoryStore:
 
         await self._episodic.stop()
         await self._style.stop()
-
-        self._started = False
         logger.info("SharedMemoryStore stopped")
 
     # ---------------------------------------------------------------------------
@@ -310,7 +306,12 @@ class SharedMemoryStore:
             memory_types = ["semantic", "episodic", "style"]
 
         results: list[MemoryResult] = []
-        task_type = classify_task_type(query)
+        task_type = "general"
+        query_lower = query.lower()
+        for rule_type, keywords in TASK_TYPE_RULES:
+            if any(kw in query_lower for kw in keywords):
+                task_type = rule_type
+                break
 
         # Semantic layer — hybrid vector + BM25 retrieval
         if "semantic" in memory_types:
@@ -345,7 +346,7 @@ class SharedMemoryStore:
                     )
                 )
 
-        # Episodic layer (async)
+        # Episodic layer
         if "episodic" in memory_types:
             episodic_records: list[EpisodicMemory] = await self._episodic.query_by_project(
                 project_id=project_id,
@@ -366,7 +367,7 @@ class SharedMemoryStore:
                 )
             )
 
-        # Style layer (async)
+        # Style layer
         if "style" in memory_types:
             formatted = await self._style.format()
             results.append(
@@ -389,73 +390,38 @@ class SharedMemoryStore:
         content: dict[str, Any],
         project_id: str | None = None,
     ) -> None:
-        """Enqueue a memory write. Blocks caller if queue is full (backpressure).
-
-        When queue reaches high watermark (75%), a warning is logged.
-        When queue is full, oldest entries are dropped to make room (drop_oldest policy).
-        """
+        """Enqueue a memory write. Write happens asynchronously."""
         if not self._started:
             await self.start()
 
-        # Check high watermark and log warning once
-        await self._check_watermark()
+        # Backpressure check - log warning at high watermark
+        queue_size = self._write_queue.qsize()
+        if queue_size >= self.HIGH_WATERMARK and not self._high_watermark_logged:
+            logger.warning(
+                "Write queue at %d/%d (%.0f%%) - backpressure active",
+                queue_size,
+                self.MAX_QUEUE_SIZE,
+                (queue_size / self.MAX_QUEUE_SIZE) * 100,
+            )
+            self._metrics.record_watermark_warning()
+            self._high_watermark_logged = True
 
-        # Try to enqueue with backpressure handling
-        item = _WriteItem(
-            memory_type=memory_type,
-            content=content,
-            project_id=project_id,
-        )
-
+        # Try to enqueue, drop on overflow
         try:
-            self._write_queue.put_nowait(item)
+            self._write_queue.put_nowait(
+                _WriteItem(
+                    memory_type=memory_type,
+                    content=content,
+                    project_id=project_id,
+                )
+            )
             self._metrics.record_enqueued()
         except asyncio.QueueFull:
-            # Queue full — apply drop_oldest policy
-            if WRITE_QUEUE_DROP_POLICY == "drop_oldest":
-                try:
-                    # Remove oldest item to make room
-                    self._write_queue.get_nowait()
-                    self._metrics.record_dropped()
-                    # Now put the new item
-                    self._write_queue.put_nowait(item)
-                    self._metrics.record_enqueued()
-                    logger.warning(
-                        "Write queue overflow: dropped oldest entry. "
-                        "Queue size: %d/%d",
-                        self._write_queue.qsize(),
-                        WRITE_QUEUE_MAXSIZE,
-                    )
-                except asyncio.QueueFull:
-                    # Even after dropping, queue is full — drop the new item
-                    self._metrics.record_dropped()
-                    logger.error(
-                        "Write queue critical overflow: dropped incoming write. "
-                        "Queue size: %d/%d",
-                        self._write_queue.qsize(),
-                        WRITE_QUEUE_MAXSIZE,
-                    )
-            else:
-                # raise policy
-                raise RuntimeError(
-                    f"Write queue full ({WRITE_QUEUE_MAXSIZE} items). "
-                    f"Backpressure requires caller to retry."
-                )
-
-    async def _check_watermark(self) -> None:
-        """Log warning when queue reaches high watermark (75% capacity)."""
-        if self._watermark_logged:
-            return
-        fill_ratio = self._write_queue.qsize() / WRITE_QUEUE_MAXSIZE
-        if fill_ratio >= WRITE_QUEUE_HIGH_WATERMARK:
-            self._watermark_logged = True
-            self._metrics.record_watermark_warning()
-            logger.warning(
-                "Write queue high watermark reached: %d/%d (%.0f%%). "
-                "Backpressure active. Consider scaling ChromaDB or increasing queue size.",
-                self._write_queue.qsize(),
-                WRITE_QUEUE_MAXSIZE,
-                fill_ratio * 100,
+            self._metrics.record_dropped()
+            self._dropped_writes += 1
+            logger.error(
+                "Write queue overflow - dropped write %d. Consider increasing MAX_QUEUE_SIZE or fixing write worker.",
+                self._dropped_writes,
             )
 
     async def write_semantic(
@@ -491,7 +457,7 @@ class SharedMemoryStore:
 
     async def write_episodic(self, record: EpisodicMemory) -> None:
         """Direct (non-queued) episodic write."""
-        await self._episodic.insert(record)
+        self._episodic.insert(record)
 
     async def _process_writes(self) -> None:
         """Background worker: processes write queue with circuit breaker protection.
@@ -500,17 +466,7 @@ class SharedMemoryStore:
         Circuit breaker trips after consecutive failures to prevent cascade to downstream.
         """
         while True:
-            try:
-                item = await self._write_queue.get()
-            except asyncio.CancelledError:
-                # Event loop shutting down — drain the queue before exiting
-                while not self._write_queue.empty():
-                    try:
-                        self._write_queue.get_nowait()
-                        self._write_queue.task_done()
-                    except asyncio.QueueEmpty:
-                        break
-                break
+            item = await self._write_queue.get()
             if item is None:
                 break
 
@@ -536,9 +492,9 @@ class SharedMemoryStore:
                     )
                 elif item.memory_type == "episodic":
                     record = EpisodicMemory(**item.content)
-                    await self._episodic.insert(record)
+                    self._episodic.insert(record)
                 elif item.memory_type == "style":
-                    await self._style.update_style(item.content)
+                    self._style.update_style(item.content)
                 else:
                     logger.warning("Unknown memory_type in write queue: %s", item.memory_type)
             except Exception as exc:
@@ -547,7 +503,6 @@ class SharedMemoryStore:
                 if cb:
                     await cb.record_failure()
                     if cb.is_open:
-                        self._metrics.record_circuit_trip()
                         logger.error(
                             "Circuit breaker tripped for %s after %d consecutive failures. "
                             "Writes to this memory type will be skipped for %.0f seconds.",
@@ -556,46 +511,40 @@ class SharedMemoryStore:
                             WriteCircuitBreaker.RECOVERY_TIMEOUT,
                         )
             else:
-                self._metrics.record_completed()
                 if cb:
                     await cb.record_success()
-                    # Check if circuit just recovered
-                    if cb.failure_count == 0 and not cb.is_open:
-                        if self._metrics.circuit_trips > 0:
-                            self._metrics.record_circuit_recovery()
-                            logger.info(
-                                "Circuit breaker recovered for %s, resuming writes.",
-                                item.memory_type,
-                            )
-            finally:
-                self._write_queue.task_done()
-
-            # Reset watermark flag when queue drains below threshold
-            if self._watermark_logged and self._write_queue.qsize() < int(WRITE_QUEUE_MAXSIZE * WRITE_QUEUE_HIGH_WATERMARK):
-                self._watermark_logged = False
+                    self._metrics.record_completed()
+                else:
+                    self._metrics.record_completed()
+            self._write_queue.task_done()
 
     # ---------------------------------------------------------------------------
     # Style
     # ---------------------------------------------------------------------------
 
-    async def get_writing_profile(self) -> dict[str, Any]:
-        """Get the writing profile as a dict."""
-        return (await self._style.get()).to_dict()
+    def get_writing_profile(self) -> WritingProfileStore:
+        return self._style
 
-    async def update_writing_style(self, updates: dict[str, Any]) -> None:
-        await self._style.update_style(updates)
+    def update_writing_style(self, updates: dict[str, Any]) -> None:
+        self._style.update_style(updates)
         logger.info("Writing style profile updated: %s", list(updates.keys()))
+
+    def get_queue_metrics(self) -> dict[str, Any]:
+        """Return current write queue metrics."""
+        metrics = self._metrics.to_dict()
+        metrics["queue_size"] = self._write_queue.qsize()
+        metrics["queue_maxsize"] = self.MAX_QUEUE_SIZE
+        metrics["queue_fill_ratio"] = float(self._write_queue.qsize()) / self.MAX_QUEUE_SIZE
+        return metrics
 
     # ---------------------------------------------------------------------------
     # Management
     # ---------------------------------------------------------------------------
 
-    async def delete_all_memories(self) -> dict[str, int]:
-        episodic_count = await self._episodic.delete_older_than(days=0)
-        if episodic_count is None:
-            episodic_count = 0
+    def delete_all_memories(self) -> dict[str, int]:
+        episodic_count = self._episodic.delete_older_than(days=0) or 0
         semantic_count = self._semantic.delete_all()
-        await self._style.update_style(
+        self._style.update_style(
             {
                 "tone": "semi-formal",
                 "sentence_length": "medium",
@@ -614,25 +563,8 @@ class SharedMemoryStore:
     def semantic_count(self, project_id: str | None = None) -> int:
         return self._semantic.count(project_id=project_id)
 
-    def get_queue_metrics(self) -> dict[str, Any]:
-        """Return current write queue metrics."""
-        metrics: dict[str, Any] = self._metrics.to_dict()  # type: ignore[assignment]
-        metrics["queue_size"] = self._write_queue.qsize()
-        metrics["queue_maxsize"] = WRITE_QUEUE_MAXSIZE
-        metrics["queue_fill_ratio"] = float(self._write_queue.qsize()) / WRITE_QUEUE_MAXSIZE
-        return metrics
 
-    # ---------------------------------------------------------------------------
-    # Legacy sync accessors (for backward compatibility with existing routes)
-    # These are temporary shims to ease migration — do not use in new code.
-    # ---------------------------------------------------------------------------
-
-    @property
-    def episodic_store(self) -> EpisodicMemoryStore:
-        """Sync accessor for code that hasn't been migrated yet."""
-        return self._episodic
-
-    @property
-    def style_store(self) -> WritingProfileStore:
-        """Sync accessor for code that hasn't been migrated yet."""
-        return self._style
+# Module-level constants for backwards compatibility
+WRITE_QUEUE_MAXSIZE = 1000
+WRITE_QUEUE_HIGH_WATERMARK = 0.75  # 75% capacity
+WRITE_QUEUE_DROP_POLICY = "drop_oldest"  # "drop_oldest" | "raise"

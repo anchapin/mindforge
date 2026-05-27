@@ -38,6 +38,44 @@ class StyleUpdate(BaseModel):
     signoff_style: str | None = None
 
 
+class MemoryReadResponse(BaseModel):
+    """Structured response from memory read with degradation flag for frontend indicator."""
+    context: str
+    degraded_quality: bool
+    degraded_layers: list[str]
+
+
+@router.get("/read")
+async def read_memory(
+    q: str = Query(..., min_length=1),
+    project_id: str | None = None,
+    memory_types: str | None = None,  # comma-separated: "semantic,episodic,style"
+    top_k: int = 5,
+    memory: SharedMemoryStore = Depends(memory_dep),
+):
+    """Read from all memory layers and return structured response with degradation flag.
+
+    This endpoint surfaces degraded_quality to the frontend via the API response,
+    enabling the UI to display a warning indicator when ChromaDB is unavailable.
+    """
+    types = memory_types.split(",") if memory_types else None
+    context = await memory.read(
+        query=q,
+        project_id=project_id,
+        memory_types=types,
+        top_k=top_k,
+    )
+    # Check if any layer reported degradation
+    degraded_layers = []
+    if "semantic memory unavailable" in context.lower():
+        degraded_layers.append("semantic")
+    return MemoryReadResponse(
+        context=context,
+        degraded_quality="semantic memory unavailable" in context.lower(),
+        degraded_layers=degraded_layers,
+    )
+
+
 @router.get("/semantic")
 async def search_semantic(
     q: str = Query(..., min_length=1),
