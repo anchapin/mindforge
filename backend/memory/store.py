@@ -471,7 +471,7 @@ class SharedMemoryStore:
             # Check circuit breaker before executing
             cb = self._circuit_breakers.get(item.memory_type)
             if cb and await cb.can_execute() is False:
-                logger.warning(
+                logger.debug(
                     "Circuit breaker open for %s, skipping write. "
                     "Will retry after recovery timeout.",
                     item.memory_type,
