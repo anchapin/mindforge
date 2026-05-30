@@ -31,6 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Clean up disk space
+        run: |
+          echo "=== [CLEANUP] $(date -Iseconds) ==="
+          docker system prune -af --volumes 2>/dev/null || true
+          rm -rf /usr/local/lib/python3.11/site-packages/sympy 2>/dev/null || true
+          rm -rf ~/.cache/pip 2>/dev/null || true
+          echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
       - name: Pre-pull test service images
         run: |
           echo "=== [PRE-PULL] $(date -Iseconds) ==="
