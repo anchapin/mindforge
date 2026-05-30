@@ -70,7 +70,7 @@ jobs:
           PYTEST_TIMEOUT: "300"
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/unit --timeout=300 --tb=short -q --forked
+          pytest backend/tests/unit --timeout=300 --tb=short -q
           echo "=== [UNIT-TESTS-DONE] exit=$? $(date -Iseconds) ==="
 
   integration-tests:
