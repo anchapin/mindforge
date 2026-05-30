@@ -34,7 +34,7 @@ jobs:
       - name: Clean up disk space
         run: |
           echo "=== [CLEANUP] $(date -Iseconds) ==="
-          docker system prune -af --volumes 2>/dev/null || true
+          docker system prune -af 2>/dev/null || true
           rm -rf /usr/local/lib/python3.11/site-packages/sympy 2>/dev/null || true
           rm -rf ~/.cache/pip 2>/dev/null || true
           echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
@@ -70,7 +70,7 @@ jobs:
           PYTEST_TIMEOUT: "300"
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/unit --timeout=300 --tb=short -q --collect-only
+          pytest backend/tests/unit --timeout=300 --tb=short -q
           echo "=== [UNIT-TESTS-DONE] exit=$? $(date -Iseconds) ==="
 
   integration-tests:
