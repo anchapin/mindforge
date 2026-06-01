@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+from datetime import UTC, datetime
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -78,11 +79,145 @@ class TemporalClient:
             )
             self._worker_task = asyncio.create_task(self._worker.run())
 
-            # Install recurring schedules (#57 part B). Failures are logged
-            # and swallowed so a misconfigured schedule never blocks startup.
+            # Install recurring schedules (#57 part B / issue #147). Failures are
+            # logged and swallowed so a misconfigured schedule never blocks startup.
             try:
+                from .workflows.email_monitor import (
+                    EmailMonitorParams,
+                    EmailMonitorWorkflow,
+                )
+                from .workflows.followup_check import (
+                    FollowupCheckParams,
+                    FollowupCheckWorkflow,
+                )
+                from .workflows.calendar_conflict import (
+                    CalendarConflictParams,
+                    CalendarConflictWorkflow,
+                )
                 from .workflows.oauth_refresh import ensure_oauth_refresh_schedule
 
+                async def _install_email_monitor_schedule(client: Any) -> bool:
+                    from temporalio.client import (
+                        Schedule,
+                        ScheduleActionStartWorkflow,
+                        ScheduleAlreadyRunningError,
+                        ScheduleIntervalSpec,
+                        ScheduleSpec,
+                    )
+                    from datetime import timedelta as td
+
+                    underlying = getattr(client, "_client", None)
+                    if underlying is None:
+                        return False
+                    try:
+                        spec = ScheduleSpec(
+                            intervals=[
+                                ScheduleIntervalSpec(
+                                    every=td(minutes=EmailMonitorParams().interval_minutes)
+                                )
+                            ]
+                        )
+                        action = ScheduleActionStartWorkflow(
+                            EmailMonitorWorkflow.run,
+                            EmailMonitorParams(),
+                            id=f"email-monitor-{int(datetime.now(UTC).timestamp())}",
+                            task_queue=DEFAULT_TASK_QUEUE,
+                        )
+                        try:
+                            await underlying.create_schedule(
+                                "email-monitor",
+                                Schedule(action=action, spec=spec),
+                            )
+                        except ScheduleAlreadyRunningError:
+                            logger.info("email-monitor schedule already installed")
+                        return True
+                    except Exception as exc:
+                        logger.warning("email-monitor schedule install failed: %s", exc)
+                        return False
+
+                async def _install_followup_check_schedule(client: Any) -> bool:
+                    from temporalio.client import (
+                        Schedule,
+                        ScheduleActionStartWorkflow,
+                        ScheduleAlreadyRunningError,
+                        ScheduleIntervalSpec,
+                        ScheduleSpec,
+                    )
+                    from datetime import timedelta as td
+
+                    underlying = getattr(client, "_client", None)
+                    if underlying is None:
+                        return False
+                    try:
+                        spec = ScheduleSpec(
+                            intervals=[
+                                ScheduleIntervalSpec(every=td(hours=24))
+                            ]
+                        )
+                        action = ScheduleActionStartWorkflow(
+                            FollowupCheckWorkflow.run,
+                            FollowupCheckParams(),
+                            id=f"followup-check-{int(datetime.now(UTC).timestamp())}",
+                            task_queue=DEFAULT_TASK_QUEUE,
+                        )
+                        try:
+                            await underlying.create_schedule(
+                                "followup-check",
+                                Schedule(action=action, spec=spec),
+                            )
+                        except ScheduleAlreadyRunningError:
+                            logger.info("followup-check schedule already installed")
+                        return True
+                    except Exception as exc:
+                        logger.warning("followup-check schedule install failed: %s", exc)
+                        return False
+
+                async def _install_calendar_conflict_schedule(client: Any) -> bool:
+                    from temporalio.client import (
+                        Schedule,
+                        ScheduleActionStartWorkflow,
+                        ScheduleAlreadyRunningError,
+                        ScheduleIntervalSpec,
+                        ScheduleSpec,
+                    )
+                    from datetime import timedelta as td
+
+                    underlying = getattr(client, "_client", None)
+                    if underlying is None:
+                        return False
+                    try:
+                        from .workflows.calendar_conflict import (
+                            CalendarConflictParams,
+                            CalendarConflictWorkflow,
+                        )
+                        spec = ScheduleSpec(
+                            intervals=[
+                                ScheduleIntervalSpec(
+                                    every=td(minutes=CalendarConflictParams().check_hours_ahead * 60)
+                                )
+                            ]
+                        )
+                        action = ScheduleActionStartWorkflow(
+                            CalendarConflictWorkflow.run,
+                            CalendarConflictParams(),
+                            id=f"calendar-conflict-{int(datetime.now(UTC).timestamp())}",
+                            task_queue=DEFAULT_TASK_QUEUE,
+                        )
+                        try:
+                            await underlying.create_schedule(
+                                "calendar-conflict",
+                                Schedule(action=action, spec=spec),
+                            )
+                        except ScheduleAlreadyRunningError:
+                            logger.info("calendar-conflict schedule already installed")
+                        return True
+                    except Exception as exc:
+                        logger.warning("calendar-conflict schedule install failed: %s", exc)
+                        return False
+
+                await _install_email_monitor_schedule(self)
+                await _install_followup_check_schedule(self)
+                await _install_calendar_conflict_schedule(self)
                 await ensure_oauth_refresh_schedule(self)
             except Exception as exc:  # pragma: no cover - defence-in-depth
                 logger.warning(
