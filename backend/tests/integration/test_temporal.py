@@ -203,3 +203,273 @@ class TestFetchRecentEmailsActivity:
             new=AsyncMock(return_value=ToolResult(success=False, error="auth", latency_ms=0)),
         ), pytest.raises(RuntimeError, match="EmailFetchTool failed: auth"):
             await fetch_recent_emails(EmailMonitorParams(credentials={}))
+
+
+# ---------------------------------------------------------------------------
+# 5. FollowupCheckWorkflow + activity
+# ---------------------------------------------------------------------------
+
+
+class TestFollowupCheckWorkflowDefinition:
+    def test_workflow_in_registry(self):
+        from backend.scheduler.workflows import (
+            ALL_ACTIVITIES,
+            ALL_WORKFLOWS,
+            FollowupCheckWorkflow,
+            check_unreplied_threads,
+        )
+
+        assert FollowupCheckWorkflow in ALL_WORKFLOWS
+        assert check_unreplied_threads in ALL_ACTIVITIES
+
+    def test_workflow_class_is_decorated(self):
+        from temporalio.workflow import _Definition
+
+        from backend.scheduler.workflows.followup_check import FollowupCheckWorkflow
+
+        defn = _Definition.must_from_class(FollowupCheckWorkflow)
+        assert defn.name == "FollowupCheckWorkflow"
+
+    def test_activity_is_decorated(self):
+        from temporalio.activity import _Definition
+
+        from backend.scheduler.workflows.followup_check import check_unreplied_threads
+
+        defn = _Definition.must_from_callable(check_unreplied_threads)
+        assert defn.name == "check_unreplied_threads"
+
+
+class TestCheckUnrepliedThreadsActivity:
+    @pytest.mark.asyncio
+    async def test_activity_returns_threads_from_tool(self):
+        from backend.scheduler.workflows.followup_check import (
+            FollowupCheckParams,
+            check_unreplied_threads,
+        )
+        from backend.tools.base import ToolResult
+
+        fake = ToolResult(
+            success=True,
+            data={
+                "threads": [
+                    {"from": "x@y.com", "subject": "Re: hi", "date": ""},
+                    {"from": "z@w.com", "subject": "follow up", "date": ""},
+                ]
+            },
+            latency_ms=1.0,
+        )
+
+        with patch(
+            "backend.tools.email_fetch.EmailFetchTool.execute",
+            new=AsyncMock(return_value=fake),
+        ):
+            result = await check_unreplied_threads(
+                FollowupCheckParams(
+                    credentials={"host": "imap.gmail.com", "username": "u", "password": "p"},
+                    days_threshold=3,
+                )
+            )
+
+        assert result["count"] == 2
+        assert len(result["threads"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_activity_raises_on_tool_failure(self):
+        from backend.scheduler.workflows.followup_check import (
+            FollowupCheckParams,
+            check_unreplied_threads,
+        )
+        from backend.tools.base import ToolResult
+
+        with patch(
+            "backend.tools.email_fetch.EmailFetchTool.execute",
+            new=AsyncMock(return_value=ToolResult(success=False, error="imap error", latency_ms=0)),
+        ), pytest.raises(RuntimeError, match="EmailFetchTool unreplied check failed: imap error"):
+            await check_unreplied_threads(FollowupCheckParams(credentials={}))
+
+
+# ---------------------------------------------------------------------------
+# 6. CalendarConflictWorkflow + activity
+# ---------------------------------------------------------------------------
+
+
+class TestCalendarConflictWorkflowDefinition:
+    def test_workflow_in_registry(self):
+        from backend.scheduler.workflows import (
+            ALL_ACTIVITIES,
+            ALL_WORKFLOWS,
+            CalendarConflictWorkflow,
+            find_calendar_conflicts,
+        )
+
+        assert CalendarConflictWorkflow in ALL_WORKFLOWS
+        assert find_calendar_conflicts in ALL_ACTIVITIES
+
+    def test_workflow_class_is_decorated(self):
+        from temporalio.workflow import _Definition
+
+        from backend.scheduler.workflows.calendar_conflict import CalendarConflictWorkflow
+
+        defn = _Definition.must_from_class(CalendarConflictWorkflow)
+        assert defn.name == "CalendarConflictWorkflow"
+
+    def test_activity_is_decorated(self):
+        from temporalio.activity import _Definition
+
+        from backend.scheduler.workflows.calendar_conflict import find_calendar_conflicts
+
+        defn = _Definition.must_from_callable(find_calendar_conflicts)
+        assert defn.name == "find_calendar_conflicts"
+
+
+class TestFindCalendarConflictsActivity:
+    @pytest.mark.asyncio
+    async def test_activity_returns_conflicts_from_tool(self):
+        from backend.scheduler.workflows.calendar_conflict import (
+            CalendarConflictParams,
+            find_calendar_conflicts,
+        )
+        from backend.tools.base import ToolResult
+
+        fake = ToolResult(
+            success=True,
+            data={
+                "conflicts": [
+                    {"title": "Meeting A", "start": "2026-06-01T10:00", "end": "11:00"},
+                    {"title": "Meeting B", "start": "2026-06-01T10:30", "end": "11:30"},
+                ]
+            },
+            latency_ms=1.0,
+        )
+
+        with patch(
+            "backend.tools.integrations.google_calendar.GoogleCalendarTool.execute",
+            new=AsyncMock(return_value=fake),
+        ):
+            result = await find_calendar_conflicts(
+                CalendarConflictParams(
+                    credentials={},
+                    check_hours_ahead=24,
+                )
+            )
+
+        assert result["count"] == 2
+        assert len(result["conflicts"]) == 2
+
+    @pytest.mark.asyncio
+    async def test_activity_raises_on_tool_failure(self):
+        from backend.scheduler.workflows.calendar_conflict import (
+            CalendarConflictParams,
+            find_calendar_conflicts,
+        )
+        from backend.tools.base import ToolResult
+
+        with patch(
+            "backend.tools.integrations.google_calendar.GoogleCalendarTool.execute",
+            new=AsyncMock(return_value=ToolResult(success=False, error="calendar error", latency_ms=0)),
+        ), pytest.raises(RuntimeError, match="GoogleCalendarTool find_conflicts failed: calendar error"):
+            await find_calendar_conflicts(CalendarConflictParams(credentials={}))
+
+
+# ---------------------------------------------------------------------------
+# 7. proactive_monitoring_enabled gating
+# ---------------------------------------------------------------------------
+
+
+class TestProactiveMonitoringGating:
+    @pytest.mark.asyncio
+    async def test_email_monitor_skips_when_disabled(self, monkeypatch):
+        from backend.scheduler.workflows.email_monitor import (
+            EmailMonitorParams,
+            EmailMonitorWorkflow,
+        )
+
+        monkeypatch.setenv("ENABLE_TEMPORAL", "false")
+        monkeypatch.setattr(
+            "backend.scheduler.workflows.email_monitor._proactive_enabled",
+            lambda db_path: False,
+        )
+        params = EmailMonitorParams()
+        wf = EmailMonitorWorkflow()
+        result = await wf.run(params)
+        assert result == []
+
+    @pytest.mark.asyncio
+    async def test_followup_check_skips_when_disabled(self, monkeypatch):
+        from backend.scheduler.workflows.followup_check import (
+            FollowupCheckParams,
+            FollowupCheckWorkflow,
+        )
+
+        monkeypatch.setenv("ENABLE_TEMPORAL", "false")
+        # _proactive_enabled is imported from email_monitor into followup_check
+        monkeypatch.setattr(
+            "backend.scheduler.workflows.email_monitor._proactive_enabled",
+            lambda db_path: False,
+        )
+        params = FollowupCheckParams()
+        wf = FollowupCheckWorkflow()
+        result = await wf.run(params)
+        assert result["count"] == 0
+        assert result["threads"] == []
+
+    @pytest.mark.asyncio
+    async def test_calendar_conflict_skips_when_disabled(self, monkeypatch):
+        from backend.scheduler.workflows.calendar_conflict import (
+            CalendarConflictParams,
+            CalendarConflictWorkflow,
+        )
+
+        monkeypatch.setenv("ENABLE_TEMPORAL", "false")
+        monkeypatch.setattr(
+            "backend.scheduler.workflows.email_monitor._proactive_enabled",
+            lambda db_path: False,
+        )
+        params = CalendarConflictParams()
+        wf = CalendarConflictWorkflow()
+        result = await wf.run(params)
+        assert result["count"] == 0
+        assert result["conflicts"] == []
+
+    @pytest.mark.asyncio
+    async def test_all_workflows_skip_when_disabled(self, monkeypatch):
+        """Verify all three workflows short-circuit when proactive monitoring is off.
+
+        This tests the gating logic without calling execute_activity, so it
+        works without a Temporal broker in the test environment.
+        """
+        from backend.scheduler.workflows.email_monitor import (
+            EmailMonitorParams,
+            EmailMonitorWorkflow,
+        )
+        from backend.scheduler.workflows.followup_check import (
+            FollowupCheckParams,
+            FollowupCheckWorkflow,
+        )
+        from backend.scheduler.workflows.calendar_conflict import (
+            CalendarConflictParams,
+            CalendarConflictWorkflow,
+        )
+
+        monkeypatch.setenv("ENABLE_TEMPORAL", "false")
+        monkeypatch.setattr(
+            "backend.scheduler.workflows.email_monitor._proactive_enabled",
+            lambda db_path: False,
+        )
+
+        # EmailMonitor
+        wf1 = EmailMonitorWorkflow()
+        result1 = await wf1.run(EmailMonitorParams())
+        assert result1 == []
+
+        # FollowupCheck
+        wf2 = FollowupCheckWorkflow()
+        result2 = await wf2.run(FollowupCheckParams())
+        assert result2["count"] == 0
+        assert result2["threads"] == []
+
+        # CalendarConflict
+        wf3 = CalendarConflictWorkflow()
+        result3 = await wf3.run(CalendarConflictParams())
+        assert result3["count"] == 0
+        assert result3["conflicts"] == []

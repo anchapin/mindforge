@@ -1,20 +1,44 @@
-"""EmailMonitorWorkflow — proactive IMAP inbox sweep (SPEC §5.3).
+"""EmailMonitorWorkflow — proactive IMAP inbox sweep (SPEC §2.6).
 
 Periodically polls the configured IMAP inbox via EmailFetchTool and returns
 the recent message envelopes so downstream skills can classify urgency or
 draft follow-ups. Designed for scheduled execution (every 30 min by default
 via Temporal Schedules) but can also be triggered ad hoc.
+
+Gated by ``proactive_monitoring_enabled`` user preference (checked at each run).
 """
 
 from __future__ import annotations
 
+import logging
+import os
+import sqlite3
 from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any
 
 from temporalio import activity, workflow
 
+logger = logging.getLogger(__name__)
+
 DEFAULT_INTERVAL_MINUTES = 30
+DEFAULT_DB_PATH = os.getenv("DATA_DIR", "/app/data") + "/mindforge.db"
+
+
+def _proactive_enabled(db_path: str) -> bool:
+    """Read ``proactive_monitoring_enabled`` from the user_preference row."""
+    try:
+        conn = sqlite3.connect(db_path, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT proactive_monitoring_enabled FROM user_preference LIMIT 1"
+        ).fetchone()
+        conn.close()
+        if row is None:
+            return True
+        return bool(row["proactive_monitoring_enabled"])
+    except Exception:
+        return True
 
 
 @dataclass
@@ -29,6 +53,7 @@ class EmailMonitorParams:
     credentials: dict[str, Any] = field(default_factory=dict)
     limit: int = 20
     interval_minutes: int = DEFAULT_INTERVAL_MINUTES
+    db_path: str = DEFAULT_DB_PATH
 
 
 @activity.defn
@@ -62,6 +87,9 @@ class EmailMonitorWorkflow:
 
     @workflow.run
     async def run(self, params: EmailMonitorParams) -> list[dict[str, Any]]:
+        if not _proactive_enabled(params.db_path):
+            logger.info("EmailMonitorWorkflow: proactive monitoring disabled — skipping")
+            return []
         return await workflow.execute_activity(
             fetch_recent_emails,
             params,
