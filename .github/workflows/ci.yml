@@ -31,6 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Clean up disk space
+        run: |
+          echo "=== [CLEANUP] $(date -Iseconds) ==="
+          docker system prune -af 2>/dev/null || true
+          rm -rf /usr/local/lib/python3.11/site-packages/sympy 2>/dev/null || true
+          rm -rf ~/.cache/pip 2>/dev/null || true
+          echo "=== [CLEANUP-DONE] $(date -Iseconds) ==="
       - name: Pre-pull test service images
         run: |
           echo "=== [PRE-PULL] $(date -Iseconds) ==="
@@ -58,9 +65,13 @@ jobs:
           EOF
           touch .env.local
       - name: Run unit tests
+        env:
+          PYTHONUNBUFFERED: "1"
+          PYTEST_TIMEOUT: "300"
         run: |
           echo "=== [UNIT-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/unit -q --tb=short
+          python -c "print('Python works'); import sys; sys.exit(0)"
+          pytest backend/tests/unit --timeout=300 --tb=short -q
           echo "=== [UNIT-TESTS-DONE] exit=$? $(date -Iseconds) ==="
 
   integration-tests:
@@ -105,7 +116,7 @@ jobs:
           done
 
           echo "=== [INTEGRATION-TESTS-START] $(date -Iseconds) ==="
-          pytest backend/tests/integration -q --tb=short --timeout=60
+          pytest backend/tests/integration --tb=short --timeout=60
           EXIT=$?
           echo "=== [INTEGRATION-TESTS-DONE] exit=$EXIT $(date -Iseconds) ==="
 
